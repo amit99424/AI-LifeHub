@@ -1,10 +1,23 @@
 /**
  * Typed API client.
- * - Sends the httpOnly cookies (credentials: include) and a Bearer token.
+ * - Sends httpOnly cookies (`credentials: include`) and a Bearer token.
  * - Transparently refreshes the access token once on a 401, then retries.
+ * - Uses `VITE_API_URL` when the API lives on a different origin (Vercel +
+ *   Render), and relative `/api/...` paths when it does not (dev proxy or a
+ *   single-origin deployment).
  */
 
-const BASE = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') || '';
+const RAW_BASE = (import.meta.env.VITE_API_URL as string | undefined)?.trim() ?? '';
+
+/** Absolute API origin, or '' for same-origin requests. */
+export const API_BASE = RAW_BASE.replace(/\/+$/, '').replace(/\/api$/, '');
+
+if (import.meta.env.PROD && API_BASE && !/^https?:\/\//i.test(API_BASE)) {
+  // Fails loudly at runtime instead of producing mysterious network errors.
+  console.error(`[api] VITE_API_URL must be an absolute URL (got "${API_BASE}"). Falling back to same-origin.`);
+}
+
+const BASE = /^https?:\/\//i.test(API_BASE) ? API_BASE : '';
 
 export class ApiError extends Error {
   status: number;
@@ -15,6 +28,11 @@ export class ApiError extends Error {
     this.status = status;
     this.code = code;
     this.details = details;
+  }
+
+  /** True when the server could not be reached at all (network / CORS / offline). */
+  get isNetworkError() {
+    return this.status === 0;
   }
 }
 
@@ -58,12 +76,27 @@ async function tryRefresh(): Promise<boolean> {
 
 async function parse<T>(res: Response): Promise<T> {
   const text = await res.text();
-  const data = text ? (JSON.parse(text) as T) : ({} as T);
+  let data: unknown = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    throw new ApiError(res.status, 'The server returned an unreadable response', 'bad_response');
+  }
   if (!res.ok) {
     const err = (data as { error?: { message?: string; code?: string; details?: unknown } }).error;
     throw new ApiError(res.status, err?.message || `Request failed (${res.status})`, err?.code || 'error', err?.details);
   }
-  return data;
+  return data as T;
+}
+
+function networkError(path: string): ApiError {
+  const target = BASE || window.location.origin;
+  return new ApiError(
+    0,
+    `Cannot reach the API at ${target}. Check that the backend is running and that this origin is listed in CORS_ORIGINS.`,
+    'network_error',
+    { path },
+  );
 }
 
 async function request<T>(path: string, init: RequestInit = {}, retry = true): Promise<T> {
@@ -75,7 +108,7 @@ async function request<T>(path: string, init: RequestInit = {}, retry = true): P
   try {
     res = await fetch(`${BASE}${path}`, { ...init, headers, credentials: 'include' });
   } catch {
-    throw new ApiError(0, 'Network error - is the API running?', 'network_error');
+    throw networkError(path);
   }
 
   if (res.status === 401 && retry && !path.startsWith('/api/auth/')) {
@@ -99,7 +132,12 @@ export const api = {
   raw: async (path: string) => {
     const headers = new Headers();
     if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);
-    const res = await fetch(`${BASE}${path}`, { headers, credentials: 'include' });
+    let res: Response;
+    try {
+      res = await fetch(`${BASE}${path}`, { headers, credentials: 'include' });
+    } catch {
+      throw networkError(path);
+    }
     if (!res.ok) throw new ApiError(res.status, 'Download failed');
     return res;
   },

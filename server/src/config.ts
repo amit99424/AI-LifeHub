@@ -41,8 +41,12 @@ const csv = z
 const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: int(4000, 1),
+  HOST: z.string().default('0.0.0.0'),
   APP_URL: z.string().default('http://localhost:5173'),
   CORS_ORIGINS: csv,
+  // Optional extra origins (e.g. a Vercel preview deployment URL).
+  VERCEL_PROJECT_URL: z.string().optional().default(''),
+  VERCEL_PREVIEW_PATTERN: z.string().optional().default(''),
   DATABASE_URL: z.string().optional().default('postgresql://postgres:postgres@127.0.0.1:5432/ai_lifehub_test?schema=public'),
 
   JWT_ACCESS_SECRET: z.string().optional().default(''),

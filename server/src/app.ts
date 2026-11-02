@@ -29,22 +29,67 @@ export function createApp() {
 
   app.use(
     helmet({
-      contentSecurityPolicy: config.isProd ? undefined : false,
+      // CSP is only needed when this service also serves the SPA (single-container
+      // mode). On Render it is a JSON API behind Vercel, where Helmet's default CSP
+      // would only add noise; the API response is not rendered as a document.
+      contentSecurityPolicy: config.isProd && !process.env.DISABLE_CSP ? undefined : false,
       crossOriginResourcePolicy: { policy: 'cross-origin' },
+      // Allow the SPA on another origin to read responses.
+      crossOriginEmbedderPolicy: false,
     }),
   );
+  // ── CORS ──────────────────────────────────────────────────
+  // Production origins come from CORS_ORIGINS (comma separated). Any Vercel
+  // deployment of this project is additionally allowed via VERCEL_PROJECT_URL /
+  // VERCEL_PREVIEW_PATTERN so preview builds work without hardcoding a URL.
+  const allowed = new Set(config.CORS_ORIGINS.map((o) => o.replace(/\/$/, '')));
+  if (config.VERCEL_PROJECT_URL) allowed.add(config.VERCEL_PROJECT_URL.replace(/\/$/, ''));
+  const previewPattern = config.VERCEL_PREVIEW_PATTERN || '^https://[a-z0-9-]+\\.vercel\\.app$';
+
+  function isAllowedOrigin(origin: string): boolean {
+    const clean = origin.replace(/\/$/, '');
+    if (allowed.has(clean)) return true;
+    try {
+      if (new RegExp(previewPattern, 'i').test(clean)) return true;
+    } catch {
+      /* invalid pattern - ignore */
+    }
+    if (!config.isProd && /^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(clean)) return true;
+    return false;
+  }
+
   app.use(
     cors({
       origin(origin, cb) {
-        if (!origin) return cb(null, true); // same-origin / curl / SSR
-        if (config.CORS_ORIGINS.includes(origin)) return cb(null, true);
-        if (!config.isProd && /^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin)) return cb(null, true);
-        return cb(new Error(`Origin ${origin} not allowed by CORS`));
+        // No Origin header: same-origin request, curl, server-to-server, health checks.
+        if (!origin) return cb(null, true);
+        if (isAllowedOrigin(origin)) return cb(null, true);
+        // Reject without throwing: a CORS failure must not become a 500.
+        return cb(null, false);
       },
       credentials: true,
       methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+      exposedHeaders: ['Content-Disposition'],
+      maxAge: 86_400,
     }),
   );
+
+  // Preflight is handled by the CORS middleware above. A bare `cors()` fallback
+  // would answer disallowed origins with `Access-Control-Allow-Origin: *`, so we
+  // answer preflight ourselves and only ever echo an allowed origin.
+  app.options('*', (req, res) => {
+    const origin = req.headers.origin;
+    if (origin && isAllowedOrigin(origin)) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+      res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PATCH,PUT,DELETE,OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+      res.setHeader('Access-Control-Max-Age', '86400');
+      res.setHeader('Vary', 'Origin');
+    }
+    res.status(204).end();
+  });
   app.use(compression());
   app.use(express.json({ limit: '1mb' }));
   app.use(express.urlencoded({ extended: false, limit: '1mb' }));
@@ -72,21 +117,38 @@ export function createApp() {
     next();
   });
 
+  // Liveness — cheap, no dependencies. Used by the platform to know the process
+  // is up (Render health check path).
+  app.get('/api/health/live', (_req, res) => {
+    res.status(200).json({ ok: true, status: 'live', uptime: Math.round(process.uptime()), time: new Date().toISOString() });
+  });
+
+  // Readiness — verifies the database. Returns 503 when the DB is unreachable so
+  // a rolling deploy never routes traffic to an instance that cannot serve it.
   app.get('/api/health', async (_req, res) => {
-    let db = 'down';
+    const started = Date.now();
+    let db: 'up' | 'down' = 'down';
+    let dbError: string | undefined;
     try {
       await prisma.$queryRaw`SELECT 1`;
       db = 'up';
-    } catch {
-      db = 'down';
+    } catch (err) {
+      dbError = (err as Error).message?.slice(0, 200);
     }
-    res.status(db === 'up' ? 200 : 503).json({
-      ok: db === 'up',
+    const ai = aiStatus();
+    const ready = db === 'up';
+    res.status(ready ? 200 : 503).json({
+      ok: ready,
+      status: ready ? 'ready' : 'degraded',
       service: 'ai-lifehub-api',
-      version: '1.0.0',
+      version: process.env.APP_VERSION ?? '1.0.0',
+      env: config.NODE_ENV,
       time: new Date().toISOString(),
+      uptime: Math.round(process.uptime()),
+      latencyMs: Date.now() - started,
       db,
-      ai: aiStatus(),
+      ...(dbError ? { dbError } : {}),
+      ai: { configured: ai.configured, provider: ai.provider, model: ai.model },
     });
   });
 
@@ -102,11 +164,23 @@ export function createApp() {
   app.use('/api/ai', aiRouter);
   app.use('/api/analytics', analyticsRouter);
 
-  // Serve the built SPA in production (single-container deployment).
+  // Serve the built SPA when it is bundled with the API (single-container
+  // deployment). On Render this path is skipped: Vercel serves the frontend and
+  // the API is a pure JSON service.
   const webDist = path.resolve(import.meta.dirname, '../../web/dist');
   if (config.isProd && fs.existsSync(webDist)) {
-    app.use(express.static(webDist, { maxAge: '1h', index: false }));
+    app.use(
+      express.static(webDist, {
+        maxAge: '1h',
+        index: false,
+        setHeaders(res, filePath) {
+          // Hashed assets are immutable; the HTML shell must never be cached.
+          if (/[\\/]assets[\\/]/.test(filePath)) res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        },
+      }),
+    );
     app.get(/^(?!\/api).*/, (_req, res) => {
+      res.setHeader('Cache-Control', 'no-cache');
       res.sendFile(path.join(webDist, 'index.html'));
     });
   }

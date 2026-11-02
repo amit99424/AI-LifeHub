@@ -99,10 +99,20 @@ export function userToday(req: Request): string {
   return localDateKey(new Date(), userTz(req));
 }
 
+/**
+ * Cross-site deployments (Vercel frontend + Render API) are different registrable
+ * domains, so the refresh cookie must be SameSite=None to be sent on the
+ * cross-origin refresh call. Browsers require Secure with None, which is why the
+ * two settings are derived from one another. Same-site deployments (or local
+ * development) keep Lax, which is stricter.
+ */
+const CROSS_SITE = config.COOKIE_SECURE && !config.COOKIE_DOMAIN;
+const SAME_SITE: 'lax' | 'none' = CROSS_SITE ? 'none' : 'lax';
+
 export function setAuthCookies(res: Response, accessToken: string, refreshToken: string) {
   const base = {
     httpOnly: true,
-    sameSite: 'lax' as const,
+    sameSite: SAME_SITE,
     secure: config.COOKIE_SECURE,
     domain: config.COOKIE_DOMAIN || undefined,
     path: '/',
@@ -114,7 +124,7 @@ export function setAuthCookies(res: Response, accessToken: string, refreshToken:
 export function clearAuthCookies(res: Response) {
   const base = {
     httpOnly: true,
-    sameSite: 'lax' as const,
+    sameSite: SAME_SITE,
     secure: config.COOKIE_SECURE,
     domain: config.COOKIE_DOMAIN || undefined,
   };

@@ -235,7 +235,7 @@ authRouter.post(
 
     // No mail provider is configured in this deployment, so the link is
     // returned directly (dev) or logged. Wire an SMTP/SES provider here.
-    const resetUrl = `${config.APP_URL}/reset-password?token=${token}`;
+    const resetUrl = `${config.APP_URL.replace(/\/$/, '')}/reset-password?token=${token}`;
     if (!config.isProd) {
       // eslint-disable-next-line no-console
       console.log(`[auth] password reset link for ${email}: ${resetUrl}`);
