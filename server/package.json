@@ -1,0 +1,47 @@
+{
+  "name": "server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "node --watch dist/index.js",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "db:seed": "tsc -p tsconfig.seed.json && node .seed-dist/prisma/seed.js",
+    "db:studio": "prisma studio",
+    "test": "tsc -p tsconfig.test.json && node .test-dist/tests/run.js",
+    "db:reset": "prisma migrate reset --force",
+    "test:unit": "node .test-dist/tests/run.js",
+    "seed": "node .seed-dist/prisma/seed.js"
+  },
+  "dependencies": {
+    "@prisma/client": "6.19.3",
+    "@prisma/debug": "^7.10.1",
+    "bcryptjs": "^3.0.2",
+    "compression": "^1.8.1",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.1",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/compression": "^1.8.1",
+    "@types/cookie-parser": "^1.4.9",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^4.17.23",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^22.18.0",
+    "prisma": "6.19.3",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
+}

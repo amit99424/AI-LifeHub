@@ -1,0 +1,23 @@
+{
+  "name": "ai-lifehub",
+  "private": true,
+  "version": "1.0.0",
+  "description": "AI-LifeHub - AI-powered personal life management and productivity platform",
+  "scripts": {
+    "dev": "concurrently -n api,web -c magenta,cyan \"npm --prefix server run start\" \"npm --prefix web run dev\"",
+    "build": "npm --prefix server run build && npm --prefix web run build",
+    "start": "npm --prefix server run start",
+    "db:generate": "npm --prefix server run db:generate",
+    "db:migrate": "npm --prefix server run db:migrate",
+    "db:deploy": "npm --prefix server run db:deploy",
+    "db:seed": "npm --prefix server run db:seed",
+    "db:studio": "npm --prefix server run db:studio",
+    "test": "npm --prefix server run test",
+    "dev:api": "npm --prefix server run start",
+    "dev:web": "npm --prefix web run dev",
+    "seed": "npm --prefix server run db:seed"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

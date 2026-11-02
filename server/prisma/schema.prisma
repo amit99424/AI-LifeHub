@@ -1,0 +1,430 @@
+// AI-LifeHub — Prisma schema
+// PostgreSQL, normalized, strict user-level isolation (every user-owned table
+// carries a userId FK with onDelete: Cascade).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Identity & auth
+// ─────────────────────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(uuid()) @db.Uuid
+  email         String    @unique
+  passwordHash  String
+  name          String
+  emailVerified Boolean   @default(false)
+  role          String    @default("user")
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  lastLoginAt   DateTime?
+  deletedAt     DateTime?
+
+  profile       Profile?
+  settings      UserSettings?
+  sessions      Session[]
+  refreshTokens RefreshToken[]
+  passwordResets PasswordResetToken[]
+
+  tasks         Task[]
+  habits        Habit[]
+  habitLogs     HabitLog[]
+  moodLogs      MoodLog[]
+  journalEntries JournalEntry[]
+  workSessions  WorkSession[]
+  dailyActivities DailyActivity[]
+  insights      AIInsight[]
+  conversations Conversation[]
+  messages      Message[]
+  usage         UserUsage[]
+  auditLogs     AuditLog[]
+
+  @@index([createdAt])
+}
+
+model Profile {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @unique @db.Uuid
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  occupation String?  // Student / Software Engineer / Designer / ...
+  primaryGoal String? // Productivity / Consistency / Wellbeing / Learning / Focus
+  timezone   String   @default("Asia/Kolkata")
+  weekStart  Int      @default(1) // 1 = Monday
+  focusHours String[] @default([]) // e.g. ["morning"]
+  onboarded  Boolean  @default(false)
+  onboardingStep Int   @default(0)
+  avatarUrl  String?
+  bio        String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model UserSettings {
+  id               String   @id @default(uuid()) @db.Uuid
+  userId           String   @unique @db.Uuid
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  theme            String   @default("system") // light | dark | system
+  accent           String   @default("violet")
+  aiEnabled        Boolean  @default(true)
+  aiAutoInsights   Boolean  @default(true) // generate daily insight automatically
+  weeklyEmailDigest Boolean @default(false)
+  moodTrackingOptIn Boolean @default(true)
+  journalPrivacyNote Boolean @default(true)
+  demoDataLoaded   Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model Session {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @db.Uuid
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userAgent    String?
+  ip           String?
+  createdAt    DateTime @default(now())
+  lastSeenAt   DateTime @default(now())
+  revokedAt    DateTime?
+  expiresAt    DateTime
+
+  refreshTokens RefreshToken[]
+
+  @@index([userId, revokedAt])
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessionId String?  @db.Uuid
+  session   Session? @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  // Only a SHA-256 hash of the token is stored — a DB leak cannot be replayed.
+  tokenHash String   @unique
+  family    String   @db.Uuid // rotation family: reuse detection revokes the family
+  expiresAt DateTime
+  revokedAt DateTime?
+  replacedBy String? @db.Uuid
+  createdAt DateTime @default(now())
+
+  @@index([userId, revokedAt])
+  @@index([family])
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String?  @db.Uuid
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action    String
+  metadata  Json?
+  ip        String?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Productivity data
+// ─────────────────────────────────────────────────────────────
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  COMPLETED
+  ARCHIVED
+}
+
+model Task {
+  id           String       @id @default(uuid()) @db.Uuid
+  userId       String       @db.Uuid
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title        String
+  description  String?
+  category     String       @default("General")
+  priority     TaskPriority @default(MEDIUM)
+  status       TaskStatus   @default(TODO)
+
+  dueDate      DateTime?
+  startedAt    DateTime? // set automatically when moved to IN_PROGRESS
+  completedAt  DateTime? // set automatically when moved to COMPLETED
+  timeTakenSec Int? // derived automatically: completedAt - startedAt (or createdAt)
+
+  isDemo       Boolean      @default(false)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@index([userId, status])
+  @@index([userId, dueDate])
+  @@index([userId, completedAt])
+  @@index([userId, priority, status])
+}
+
+enum HabitFrequency {
+  DAILY
+  WEEKLY
+}
+
+model Habit {
+  id          String         @id @default(uuid()) @db.Uuid
+  userId      String         @db.Uuid
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name        String
+  description String?
+  icon        String         @default("Sparkles")
+  color       String         @default("violet")
+  frequency   HabitFrequency @default(DAILY)
+  targetPerWeek Int          @default(7) // used for WEEKLY habits (and goal framing for DAILY)
+  active      Boolean        @default(true)
+  isDemo      Boolean        @default(false)
+  archivedAt  DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  logs        HabitLog[]
+
+  @@unique([userId, name])
+  @@index([userId, active])
+}
+
+model HabitLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  habitId   String   @db.Uuid
+  habit     Habit    @relation(fields: [habitId], references: [id], onDelete: Cascade)
+  userId    String   @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Calendar day (UTC-normalized "date key") — one check-in per habit per day.
+  date      DateTime @db.Date
+  note      String?
+  isDemo    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@unique([habitId, date])
+  @@index([userId, date])
+}
+
+enum MoodLevel {
+  GREAT
+  GOOD
+  NEUTRAL
+  BAD
+  TERRIBLE
+}
+
+model MoodLog {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  level     MoodLevel
+  score     Int       // 5=great … 1=terrible, denormalized for fast aggregation
+  note      String?
+  energy    Int?      // 1-5 optional
+  focus     Int?      // 1-5 optional
+  date      DateTime  @db.Date
+  isDemo    Boolean   @default(false)
+  createdAt DateTime  @default(now())
+
+  @@unique([userId, date])
+  @@index([userId, date])
+}
+
+model JournalEntry {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title     String?
+  content   String
+  date      DateTime @db.Date
+  wordCount Int      @default(0)
+
+  // AI enrichment (nullable — only present once analyzed)
+  sentiment        String? // positive | neutral | negative | mixed
+  sentimentScore   Float? // -1 … 1
+  summary          String?
+  themes           String[] @default([])
+  productivityNotes String?
+  analyzedAt       DateTime?
+  isDemo    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, date])
+}
+
+enum SessionCategory {
+  STUDYING
+  CODING
+  OFFICE_WORK
+  READING
+  PERSONAL_PROJECTS
+  OTHER
+}
+
+model WorkSession {
+  id         String          @id @default(uuid()) @db.Uuid
+  userId     String          @db.Uuid
+  user       User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  category   SessionCategory @default(STUDYING)
+  label      String?
+  startedAt  DateTime
+  endedAt    DateTime?
+  pausedAt   DateTime?
+  // accumulated paused milliseconds, so duration excludes pauses
+  pausedMs   Int             @default(0)
+  durationSec Int            @default(0) // recalculated on stop
+  status     String          @default("RUNNING") // RUNNING | PAUSED | COMPLETED
+  focusScore Int? // self reported 1-5 at stop (optional)
+  notes      String?
+  date       DateTime        @db.Date
+  isDemo     Boolean         @default(false)
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  @@index([userId, date])
+  @@index([userId, status])
+}
+
+// One row per calendar day — the denormalized "life log" that the AI pipeline
+// and analytics read from. Fields are nullable because everything is optional.
+model DailyActivity {
+  id            String   @id @default(uuid()) @db.Uuid
+  userId        String   @db.Uuid
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  date          DateTime @db.Date
+  sleepMinutes  Int?
+  exerciseMinutes Int?
+  screenMinutes Int?
+  meditationMinutes Int?
+  socialMinutes Int?
+  steps         Int?
+  source        String   @default("manual") // manual | csv | device
+  notes         String?
+  isDemo        Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([userId, date])
+  @@index([userId, date])
+}
+
+// ─────────────────────────────────────────────────────────────
+// AI
+// ─────────────────────────────────────────────────────────────
+
+enum InsightType {
+  PRODUCTIVITY
+  HABIT
+  OVERLOAD
+  MOOD
+  JOURNAL
+  WEEKLY_SUMMARY
+  ROUTINE
+}
+
+model AIInsight {
+  id         String      @id @default(uuid()) @db.Uuid
+  userId     String      @db.Uuid
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type       InsightType
+  title      String
+  body       String      // markdown, 1-3 short paragraphs
+  recommendations String[] @default([])
+  confidence String      @default("low") // low | medium | high — driven by data volume
+  dataPoints Json?       // the feature snapshot that produced it (audit trail)
+  provider   String      // gemini | openai | none
+  model      String?
+  periodStart DateTime?
+  periodEnd   DateTime?
+  dismissed  Boolean     @default(false)
+  pinned     Boolean     @default(false)
+  isDemo     Boolean     @default(false)
+  createdAt  DateTime    @default(now())
+
+  @@index([userId, type, createdAt])
+  @@index([userId, dismissed])
+}
+
+model Conversation {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title     String    @default("New conversation")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  messages  Message[]
+
+  @@index([userId, updatedAt])
+}
+
+model Message {
+  id             String       @id @default(uuid()) @db.Uuid
+  conversationId String       @db.Uuid
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userId         String       @db.Uuid
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  role           String // user | assistant | system
+  content        String
+  tokensIn       Int?
+  tokensOut      Int?
+  provider       String?
+  model          String?
+  error          String?
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId, createdAt])
+  @@index([userId])
+}
+
+// Per-user-per-day AI usage metering (rate limiting + cost visibility).
+model UserUsage {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @db.Uuid
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  date         DateTime @db.Date
+  chatMessages Int      @default(0)
+  insights     Int      @default(0)
+  journalAnalyses Int   @default(0)
+  tokensIn     Int      @default(0)
+  tokensOut    Int      @default(0)
+  updatedAt    DateTime @updatedAt
+
+  @@unique([userId, date])
+}
