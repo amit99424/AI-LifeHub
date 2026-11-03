@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react';
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider, useAuth } from '@/lib/auth';
+import { isTransientError } from '@/lib/api';
 import { AppShell } from '@/components/AppShell';
 
 const Login = lazy(() => import('@/pages/Login'));
@@ -25,13 +26,22 @@ const NotFound = lazy(() => import('@/pages/NotFound'));
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
+      // 4xx answers are deterministic — never retry them. Network failures and
+      // 5xx/gateway errors are usually Render's free-tier cold start, so retry
+      // with a short backoff before surfacing an error.
       retry: (count, err) => {
-        const status = (err as { status?: number }).status;
-        if (status && status >= 400 && status < 500) return false;
-        return count < 1;
+        if (!isTransientError(err)) return false;
+        return count < 2;
       },
+      retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 5000),
       staleTime: 20_000,
-      refetchOnWindowFocus: false,
+      gcTime: 5 * 60_000,
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
+    },
+    mutations: {
+      // A failed mutation must surface immediately; the optimistic layer rolls back.
+      retry: 0,
     },
   },
 });

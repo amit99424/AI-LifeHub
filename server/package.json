@@ -16,7 +16,8 @@
     "test": "tsc -p tsconfig.test.json && node .test-dist/tests/run.js",
     "db:reset": "prisma migrate reset --force",
     "test:unit": "node .test-dist/tests/run.js",
-    "seed": "node .seed-dist/prisma/seed.js"
+    "seed": "node .seed-dist/prisma/seed.js",
+    "start:migrate": "prisma migrate deploy && node dist/index.js"
   },
   "dependencies": {
     "@prisma/client": "6.19.3",

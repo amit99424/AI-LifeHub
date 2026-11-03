@@ -65,7 +65,18 @@ const EnvSchema = z.object({
   AI_MAX_CONTEXT_TOKENS: int(12000, 1000),
   AI_CHAT_DAILY_LIMIT: int(80, 1),
   AI_INSIGHT_DAILY_LIMIT: int(30, 1),
-  AI_REQUEST_TIMEOUT_MS: int(45000, 5000),
+  AI_REQUEST_TIMEOUT_MS: int(90000, 5000),
+  // 'thinking' models can take 30-60 s before emitting their first token, so the
+  // default has to be generous. Configurable per deployment.
+  AI_MODEL_FALLBACKS: z
+    .string()
+    .optional()
+    .transform((v) =>
+      (v ?? 'gemini-3.8-flash,gemini-3.5-flash-lite,gemini-flash-latest,gemini-2.5-flash')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
+    ),
   AI_TEMPERATURE: z
     .string()
     .optional()

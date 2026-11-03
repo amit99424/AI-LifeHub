@@ -71,6 +71,7 @@ export default function Tasks() {
 
   const invalidate = () => {
     void qc.invalidateQueries({ queryKey: ['tasks'] });
+    void qc.invalidateQueries({ queryKey: ['task-categories'] });
     void qc.invalidateQueries({ queryKey: ['dashboard'] });
     void qc.invalidateQueries({ queryKey: ['analytics'] });
     void qc.invalidateQueries({ queryKey: ['nav-counts'] });
@@ -96,10 +97,45 @@ export default function Tasks() {
     onError: (e) => toast((e as Error).message, 'error'),
   });
 
+  // Optimistic completion: the row flips instantly, the server is the source of
+  // truth, and a failure rolls the flip back with a toast.
   const toggle = useMutation({
-    mutationFn: (id: string) => api.post(`/api/tasks/${id}/toggle`),
-    onSuccess: invalidate,
-    onError: (e) => toast((e as Error).message, 'error'),
+    mutationFn: (id: string) => api.post<Task>(`/api/tasks/${id}/toggle`),
+    onMutate: async (id: string) => {
+      await qc.cancelQueries({ queryKey: ['tasks'] });
+      const snapshots = qc.getQueriesData<TasksResponse>({ queryKey: ['tasks'] });
+      for (const [key, data] of snapshots) {
+        if (!data) continue;
+        qc.setQueryData<TasksResponse>(key, {
+          ...data,
+          tasks: data.tasks.map((t) =>
+            t.id === id
+              ? {
+                  ...t,
+                  status: t.status === 'COMPLETED' ? 'TODO' : 'COMPLETED',
+                  completedAt: t.status === 'COMPLETED' ? null : new Date().toISOString(),
+                  overdue: false,
+                }
+              : t,
+          ),
+        });
+      }
+      return { snapshots };
+    },
+    onError: (e, _id, ctx) => {
+      ctx?.snapshots?.forEach(([key, data]) => qc.setQueryData(key, data));
+      toast((e as Error).message, 'error');
+    },
+    onSuccess: () => {
+      // Refresh derived data (dashboard, analytics, counters) once, in the background.
+      void qc.invalidateQueries({ queryKey: ['dashboard'] });
+      void qc.invalidateQueries({ queryKey: ['analytics'] });
+      void qc.invalidateQueries({ queryKey: ['nav-counts'] });
+      void qc.invalidateQueries({ queryKey: ['task-categories'] });
+    },
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: ['tasks'] });
+    },
   });
 
   const remove = useMutation({
@@ -112,12 +148,41 @@ export default function Tasks() {
   });
 
   const quickAdd = useMutation({
-    mutationFn: (title: string) => api.post('/api/tasks', { title, category: 'General', priority: 'MEDIUM' }),
+    mutationFn: (title: string) => api.post<Task>('/api/tasks', { title, category: 'General', priority: 'MEDIUM' }),
+    onMutate: async (title: string) => {
+      await qc.cancelQueries({ queryKey: ['tasks'] });
+      const snapshots = qc.getQueriesData<TasksResponse>({ queryKey: ['tasks'] });
+      const optimistic: Task = {
+        id: `optimistic-${Date.now()}`,
+        title,
+        description: null,
+        category: 'General',
+        priority: 'MEDIUM',
+        status: 'TODO',
+        dueDate: null,
+        startedAt: null,
+        completedAt: null,
+        timeTakenSec: null,
+        isDemo: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        overdue: false,
+        dueToday: false,
+      };
+      for (const [key, data] of snapshots) {
+        if (!data) continue;
+        qc.setQueryData<TasksResponse>(key, { ...data, tasks: [optimistic, ...data.tasks], total: data.total + 1 });
+      }
+      return { snapshots };
+    },
+    onError: (e, _title, ctx) => {
+      ctx?.snapshots?.forEach(([key, data]) => qc.setQueryData(key, data));
+      toast((e as Error).message, 'error');
+    },
     onSuccess: () => {
       setQuick('');
       invalidate();
     },
-    onError: (e) => toast((e as Error).message, 'error'),
   });
 
   const tasks = query.data?.tasks ?? [];
@@ -408,13 +473,35 @@ function Group({
               t.status === 'COMPLETED' ? 'border-[rgb(var(--border))] opacity-70' : 'border-[rgb(var(--border))]',
             )}
           >
-            <button onClick={() => onToggle(t.id)} className="mt-0.5 shrink-0" aria-label={t.status === 'COMPLETED' ? 'Mark as not done' : 'Mark complete'}>
+            {/*
+              Touch-friendly completion target: 44x44 CSS px (Apple HIG / WCAG 2.5.5).
+              - type="button" so it can never submit a surrounding form
+              - touch-manipulation removes the 300 ms double-tap delay on iOS
+              - stopPropagation prevents a parent card handler from also firing
+              - aria-pressed gives screen readers the on/off state
+            */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggle(t.id);
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+              aria-pressed={t.status === 'COMPLETED'}
+              aria-label={t.status === 'COMPLETED' ? `Mark "${t.title}" as not done` : `Mark "${t.title}" as done`}
+              className={cn(
+                'relative -m-2 flex h-11 w-11 shrink-0 touch-manipulation items-center justify-center rounded-xl',
+                'active:scale-95 transition-transform select-none',
+                'hover:bg-brand-50 dark:hover:bg-brand-500/10',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/60',
+              )}
+            >
               {t.status === 'COMPLETED' ? (
-                <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+                <CheckCircle2 className="h-6 w-6 text-emerald-500" />
               ) : t.status === 'IN_PROGRESS' ? (
-                <Clock className="h-5 w-5 text-brand-500" />
+                <Clock className="h-6 w-6 text-brand-500" />
               ) : (
-                <Circle className="h-5 w-5 text-ink-300 transition hover:text-brand-500 dark:text-ink-600" />
+                <Circle className="h-6 w-6 text-ink-300 dark:text-ink-600" />
               )}
             </button>
             <div className="min-w-0 flex-1">
@@ -440,12 +527,29 @@ function Group({
                 <span>created {relativeTime(t.createdAt)}</span>
               </div>
             </div>
-            <div className="flex shrink-0 gap-0.5 opacity-0 transition group-hover:opacity-100 focus-within:opacity-100">
-              <button onClick={() => onEdit(t)} className="rounded-md p-1.5 text-ink-400 hover:bg-ink-100 hover:text-ink-700 dark:hover:bg-ink-800" aria-label="Edit">
-                <Pencil className="h-3.5 w-3.5" />
+            {/* Hover-reveal on pointer devices; always visible and 40px tall on touch. */}
+            <div className="flex shrink-0 gap-0.5 opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEdit(t);
+                }}
+                className="flex h-10 w-10 touch-manipulation items-center justify-center rounded-lg text-ink-400 hover:bg-ink-100 hover:text-ink-700 dark:hover:bg-ink-800"
+                aria-label={`Edit ${t.title}`}
+              >
+                <Pencil className="h-4 w-4" />
               </button>
-              <button onClick={() => onDelete(t)} className="rounded-md p-1.5 text-ink-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-500/10" aria-label="Delete">
-                <Trash2 className="h-3.5 w-3.5" />
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete(t);
+                }}
+                className="flex h-10 w-10 touch-manipulation items-center justify-center rounded-lg text-ink-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-500/10"
+                aria-label={`Delete ${t.title}`}
+              >
+                <Trash2 className="h-4 w-4" />
               </button>
             </div>
           </div>

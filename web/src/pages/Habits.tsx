@@ -60,13 +60,37 @@ export default function Habits() {
     void qc.invalidateQueries({ queryKey: ['analytics'] });
   };
 
+  // Optimistic check-in: the card flips immediately, rollback on failure.
   const checkin = useMutation({
     mutationFn: (id: string) => api.post<{ done: boolean }>(`/api/habits/${id}/checkin`),
+    onMutate: async (id: string) => {
+      await qc.cancelQueries({ queryKey: ['habits'] });
+      const snapshot = qc.getQueryData<{ habits: Habit[]; today: string }>(['habits']);
+      if (snapshot) {
+        qc.setQueryData<{ habits: Habit[]; today: string }>(['habits'], {
+          ...snapshot,
+          habits: snapshot.habits.map((h) =>
+            h.id === id
+              ? { ...h, doneToday: !h.doneToday, streak: h.doneToday ? Math.max(0, h.streak - 1) : h.streak + 1 }
+              : h,
+          ),
+        });
+      }
+      return { snapshot };
+    },
+    onError: (e, _id, ctx) => {
+      if (ctx?.snapshot) qc.setQueryData(['habits'], ctx.snapshot);
+      toast((e as Error).message, 'error');
+    },
     onSuccess: (res) => {
-      invalidate();
       toast(res.done ? 'Checked in — logged automatically.' : 'Check-in removed.', res.done ? 'success' : 'info');
     },
-    onError: (e) => toast((e as Error).message, 'error'),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: ['habits'] });
+      void qc.invalidateQueries({ queryKey: ['habit-reports'] });
+      void qc.invalidateQueries({ queryKey: ['dashboard'] });
+      void qc.invalidateQueries({ queryKey: ['analytics'] });
+    },
   });
 
   const save = useMutation({
@@ -159,7 +183,7 @@ export default function Habits() {
                     onClick={() => checkin.mutate(h.id)}
                     disabled={checkin.isPending && checkin.variables === h.id}
                     className={cn(
-                      'flex flex-1 items-center justify-center gap-2 rounded-xl border-2 px-3 py-2.5 text-[13px] font-bold transition active:scale-[0.99]',
+                      'flex min-h-[48px] flex-1 touch-manipulation items-center justify-center gap-2 rounded-xl border-2 px-3 py-3 text-[13px] font-bold transition active:scale-[0.99]',
                       h.doneToday
                         ? 'border-emerald-500 bg-emerald-500 text-white hover:bg-emerald-600'
                         : 'border-dashed border-ink-300 text-ink-600 hover:border-brand-400 hover:bg-brand-50 hover:text-brand-700 dark:border-ink-600 dark:text-ink-300 dark:hover:bg-brand-500/10',

@@ -122,6 +122,22 @@ register('compactFeatures drops nulls so prompts stay small', () => {
   assert.ok(json.length < 6000, 'payload stays compact');
 });
 
+register('retry policy: transient failures retry, deterministic ones do not', () => {
+  // Mirrors isTransientError() in web/src/lib/api.ts and the TanStack Query retry.
+  const transient = (e: { status?: number; code?: string }) => {
+    if (e.status === 0) return true;
+    if (e.status === 502 || e.status === 503 || e.status === 504 || e.status === 408) return true;
+    if (e.code === 'ai_provider_error' || e.code === 'upstream_error') return true;
+    return false;
+  };
+  assert.equal(transient({ status: 0 }), true, 'network / Render cold start is retryable');
+  assert.equal(transient({ status: 503 }), true, 'service unavailable while booting');
+  assert.equal(transient({ status: 504 }), true, 'gateway timeout');
+  assert.equal(transient({ status: 401 }), false, 'auth failure is final');
+  assert.equal(transient({ status: 400 }), false, 'validation error is final');
+  assert.equal(transient({ status: 429, code: 'rate_limited' }), false, 'user rate limit is final');
+});
+
 register('dateKey round-trips a stored @db.Date value', () => {
   assert.equal(dateKey(new Date('2026-10-20T00:00:00.000Z')), '2026-10-20');
 });

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Bot, ChevronRight, MessageSquarePlus, RefreshCw, Send, Sparkles, Trash2, User } from 'lucide-react';
+import { AlertTriangle, Bot, ChevronRight, MessageSquarePlus, RefreshCw, Send, Sparkles, Trash2, User, X } from 'lucide-react';
 import { api } from '@/lib/api';
 import type { ChatMessage, Conversation } from '@/lib/types';
 import { Badge, Button, Card, EmptyState, Skeleton, Textarea, toast } from '@/components/ui';
@@ -25,6 +25,7 @@ export default function Assistant() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [error, setError] = useState<{ message: string; hint: string } | null>(null);
   const [dataWindow, setDataWindow] = useState<{ from: string; to: string; days: number } | null>(null);
   const [availability, setAvailability] = useState<{ daysWithAnyActivity: number; missing: string[]; sufficientForPatterns: boolean } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -65,6 +66,7 @@ export default function Assistant() {
     const question = text.trim();
     if (!question || sending) return;
     setInput('');
+    setError(null);
     setSending(true);
     const optimistic: ChatMessage = { id: `tmp-${Date.now()}`, role: 'user', content: question, createdAt: new Date().toISOString() };
     setMessages((m) => [...m, optimistic]);
@@ -77,8 +79,24 @@ export default function Assistant() {
       void qc.invalidateQueries({ queryKey: ['conversations'] });
       void qc.invalidateQueries({ queryKey: ['ai-status'] });
     } catch (err) {
+      const e = err as { message?: string; code?: string; status?: number };
       setMessages((m) => m.filter((x) => x.id !== optimistic.id));
-      toast((err as Error).message, 'error');
+      // Put the question back so the user can retry without retyping it.
+      setInput(question);
+
+      // An inline, dismissible error bubble beats a toast that disappears.
+      const hint =
+        e.code === 'ai_model_unavailable'
+          ? "The server's configured AI model is no longer available. The deployment needs GEMINI_MODEL updated (a fallback is attempted automatically)."
+          : e.code === 'ai_quota_exceeded'
+            ? 'The Gemini quota or rate limit was hit. Wait a moment and try again.'
+            : e.code === 'ai_unconfigured'
+              ? 'AI is not configured on the server (AI_PROVIDER / GEMINI_API_KEY).'
+              : e.status === 0
+                ? 'The API did not respond — the Render free instance may be waking up. Retrying usually works.'
+                : 'The assistant could not answer that. Try again.';
+      setError({ message: e.message || 'Request failed', hint });
+      toast(e.message || 'The assistant could not answer', 'error');
     } finally {
       setSending(false);
       inputRef.current?.focus();
@@ -265,13 +283,25 @@ export default function Assistant() {
                   {[0, 1, 2].map((i) => (
                     <span key={i} className="h-1.5 w-1.5 animate-bounce rounded-full bg-brand-500" style={{ animationDelay: `${i * 120}ms` }} />
                   ))}
-                  <span className="ml-1 text-[11px] text-ink-400">reading your data…</span>
+                  <span className="ml-1 text-[11px] text-ink-400">reading your data — this can take up to 40s on Gemini…</span>
                 </div>
               </div>
             )}
           </div>
 
           <div className="border-t border-[rgb(var(--border))] p-3">
+            {error && (
+              <div className="mb-2 flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50/80 px-3 py-2.5 text-[11px] text-rose-800 dark:border-rose-500/25 dark:bg-rose-500/10 dark:text-rose-200">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold">{error.message}</p>
+                  <p className="mt-0.5 opacity-80">{error.hint}</p>
+                </div>
+                <button onClick={() => setError(null)} className="rounded p-0.5 opacity-60 hover:opacity-100" aria-label="Dismiss error">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
             {!status?.configured && (
               <p className="mb-2 text-[11px] text-amber-700 dark:text-amber-300">The assistant needs an AI provider key on the server before it can answer.</p>
             )}

@@ -89,13 +89,32 @@ async function parse<T>(res: Response): Promise<T> {
   return data as T;
 }
 
+/**
+ * Render's free tier suspends the API after ~15 minutes idle and the first
+ * request afterwards can take 30-60 s (or fail once while the instance boots).
+ * Long AI calls can also exceed that window. These are transient: retry them
+ * rather than showing the user a scary error.
+ */
+export function isTransientError(err: unknown): boolean {
+  const e = err as Partial<ApiError> | undefined;
+  if (!e) return false;
+  if (e.status === 0) return true; // network / cold start
+  if (e.status === 502 || e.status === 503 || e.status === 504) return true; // gateway / booting
+  if (e.status === 408) return true;
+  if (e.code === 'ai_provider_error' || e.code === 'upstream_error') return true;
+  return false;
+}
+
 function networkError(path: string): ApiError {
   const target = BASE || window.location.origin;
+  const isColdStart = /onrender\.com/i.test(target);
   return new ApiError(
     0,
-    `Cannot reach the API at ${target}. Check that the backend is running and that this origin is listed in CORS_ORIGINS.`,
+    isColdStart
+      ? `The server is waking up (Render free tier). This can take up to a minute — retrying automatically…`
+      : `Cannot reach the API at ${target}. Check that the backend is running and that this origin is listed in CORS_ORIGINS.`,
     'network_error',
-    { path },
+    { path, coldStart: isColdStart },
   );
 }
 

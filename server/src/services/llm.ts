@@ -39,11 +39,60 @@ export interface LLMResult {
   tokensOut?: number;
 }
 
+/**
+ * Model fallback chain.
+ *
+ * Google retires model ids for new API keys without warning (e.g.
+ * `gemini-2.5-flash` now returns 404 "no longer available to new users"), and
+ * the newest ids can be temporarily overloaded (503). A single hard-coded model
+ * therefore breaks the whole AI surface on a config that "looks correct".
+ *
+ * Strategy: try the configured model first, then AI_MODEL_FALLBACKS. Remember
+ * the first model that answers so subsequent calls skip the dead ones.
+ */
+let resolvedModel: string | null = null;
+
+function modelChain(): string[] {
+  const chain = [config.aiModel, ...config.AI_MODEL_FALLBACKS].filter(Boolean);
+  const unique = [...new Set(chain)];
+  if (resolvedModel && unique.includes(resolvedModel)) {
+    return [resolvedModel, ...unique.filter((m) => m !== resolvedModel)];
+  }
+  return unique;
+}
+
+/** Exposed for the health endpoint so operators can see which model is in use. */
+export function activeModel(): string {
+  return resolvedModel ?? config.aiModel;
+}
+
+/**
+ * Gemini 3.x models reason internally before answering, which pushed replies to
+ * 30-45 s. `thinkingConfig.thinkingLevel` lowers that to ~18-22 s. Note the newer
+ * `thinkingBudget: 0` form is rejected with 400 by these models - use levels.
+ * Models that do not understand the field ignore it.
+ */
+function geminiThinking(model: string): Record<string, unknown> {
+  const level = (process.env.AI_THINKING_LEVEL ?? 'MINIMAL').toUpperCase();
+  if (level === 'OFF') return {};
+  if (!/^gemini-3\./.test(model)) return {};
+  return { thinkingConfig: { thinkingLevel: level } };
+}
+
+function isModelUnavailable(status: number, message: string): boolean {
+  if (status === 404) return true;
+  if (status === 503) return true; // temporarily overloaded - try the next model
+  return /no longer available|not found|not supported|unsupported model/i.test(message);
+}
+
 export function aiStatus() {
   return {
     configured: AI_MODE !== 'unconfigured',
     provider: AI_MODE,
-    model: AI_MODE === 'unconfigured' ? null : config.aiModel,
+    // `model` is what the provider actually answered with (may differ from the
+    // configured id if the fallback chain kicked in); `configuredModel` is the env value.
+    model: AI_MODE === 'unconfigured' ? null : activeModel(),
+    configuredModel: AI_MODE === 'unconfigured' ? null : config.aiModel,
     missingEnv:
       AI_MODE === 'unconfigured'
         ? config.AI_PROVIDER === 'none'
@@ -81,6 +130,8 @@ function describeFetchError(err: unknown): string {
 async function postWithRetry(url: string, init: () => RequestInit, attempt = 0): Promise<Response> {
   try {
     const res = await fetch(url, init());
+    // 4xx answers (bad model, bad key, malformed request) are deterministic:
+    // retrying only doubles the latency the user waits for.
     if ((res.status >= 500 || res.status === 429) && attempt < 1) {
       await new Promise((r) => setTimeout(r, 900));
       return postWithRetry(url, init, attempt + 1);
@@ -95,7 +146,7 @@ async function postWithRetry(url: string, init: () => RequestInit, attempt = 0):
   }
 }
 
-async function callGemini(messages: LLMMessage[], opts: LLMOptions): Promise<LLMResult> {
+async function callGeminiOnce(model: string, messages: LLMMessage[], opts: LLMOptions): Promise<LLMResult> {
   const system = messages.filter((m) => m.role === 'system').map((m) => m.content).join('\n\n');
   const contents = messages
     .filter((m) => m.role !== 'system')
@@ -104,7 +155,7 @@ async function callGemini(messages: LLMMessage[], opts: LLMOptions): Promise<LLM
   const { signal, cancel } = withTimeout(opts.timeoutMs ?? config.AI_REQUEST_TIMEOUT_MS);
   try {
     const res = await postWithRetry(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(config.aiModel)}:generateContent?key=${encodeURIComponent(config.aiKey)}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(config.aiKey)}`,
       () => ({
         method: 'POST',
         signal,
@@ -118,6 +169,7 @@ async function callGemini(messages: LLMMessage[], opts: LLMOptions): Promise<LLM
             temperature: opts.temperature ?? config.AI_TEMPERATURE,
             maxOutputTokens: opts.maxTokens ?? 1600,
             ...(opts.json ? { responseMimeType: 'application/json' } : {}),
+            ...geminiThinking(model),
           },
         }),
       }),
@@ -139,7 +191,7 @@ async function callGemini(messages: LLMMessage[], opts: LLMOptions): Promise<LLM
     return {
       text,
       provider: 'gemini',
-      model: config.aiModel,
+      model,
       tokensIn: body.usageMetadata?.promptTokenCount,
       tokensOut: body.usageMetadata?.candidatesTokenCount,
     };
@@ -150,6 +202,37 @@ async function callGemini(messages: LLMMessage[], opts: LLMOptions): Promise<LLM
   } finally {
     cancel();
   }
+}
+
+/** Tries each model in the chain until one answers. */
+async function callGemini(messages: LLMMessage[], opts: LLMOptions): Promise<LLMResult> {
+  const chain = modelChain();
+  const failures: string[] = [];
+
+  for (const model of chain) {
+    try {
+      const result = await callGeminiOnce(model, messages, opts);
+      if (resolvedModel !== model) {
+        resolvedModel = model;
+        // eslint-disable-next-line no-console
+        console.log(`[ai] using Gemini model "${model}"`);
+      }
+      return result;
+    } catch (err) {
+      const providerErr = err instanceof AIProviderError ? err : null;
+      const status = providerErr?.status ?? 0;
+      const message = (err as Error).message;
+      failures.push(`${model}: ${message}`);
+      // Only a "this model does not exist here" answer justifies moving on.
+      if (!isModelUnavailable(status, message)) throw err;
+    }
+  }
+
+  throw new AIProviderError(
+    `No Gemini model from the configured chain could be used. Tried ${chain.join(', ')}. ` +
+      `Update GEMINI_MODEL or AI_MODEL_FALLBACKS. Last error: ${failures.at(-1) ?? 'unknown'}`,
+    chain.length ? 404 : 500,
+  );
 }
 
 async function callOpenAI(messages: LLMMessage[], opts: LLMOptions): Promise<LLMResult> {
