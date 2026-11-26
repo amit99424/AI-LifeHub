@@ -1,5 +1,5 @@
 /**
- * "Continue with Google" — the standard Google Identity button.
+ * "Continue with Google" — the only sign-in control in the product.
  *
  * Flow (server-side authorization code, the most secure option):
  *   1. The button is a plain link to the API: `<API>/api/auth/google/start`.
@@ -40,7 +40,7 @@ export function googleStartUrl(next?: string): string {
   return `${API_BASE}/api/auth/google/start${q ? `?${q}` : ''}`;
 }
 
-function GoogleGlyph({ className }: { className?: string }) {
+export function GoogleGlyph({ className }: { className?: string }) {
   // Official four-colour Google "G" mark.
   return (
     <svg viewBox="0 0 48 48" className={className} aria-hidden="true" focusable="false">
@@ -95,17 +95,17 @@ export function GoogleButton({
       return (
         <div
           aria-hidden="true"
-          className={cn('h-[46px] w-full animate-pulse rounded-xl border border-[rgb(var(--border))] bg-ink-100 dark:bg-ink-800', className)}
+          className={cn('h-[54px] w-full animate-pulse rounded-[13px] bg-white/[0.07]', className)}
         />
       );
     }
     return (
       <div
         role="status"
-        className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 text-[12px] leading-relaxed text-amber-800 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-200"
+        className="rounded-[13px] border border-amber-400/25 bg-amber-400/10 px-4 py-3.5 text-[12.5px] leading-relaxed text-amber-100"
       >
         <p className="font-semibold">Google sign-in is not available right now.</p>
-        <p className="mt-1">
+        <p className="mt-1 text-amber-100/70">
           This server has no Google OAuth credentials configured, so accounts cannot be created or opened. If you run
           AI-LifeHub yourself, set <code className="font-mono text-[11px]">GOOGLE_CLIENT_ID</code>,{' '}
           <code className="font-mono text-[11px]">GOOGLE_CLIENT_SECRET</code> and{' '}
@@ -115,37 +115,48 @@ export function GoogleButton({
     );
   }
 
+  const busy = disabled || leaving;
+
   return (
     <a
       href={googleStartUrl(next)}
       role="button"
       aria-label={label}
-      aria-disabled={disabled || leaving}
+      aria-busy={leaving}
+      aria-disabled={busy}
       onClick={(e) => {
-        if (disabled || leaving) {
+        if (busy) {
           e.preventDefault();
           return;
         }
-        // The server redirect takes a moment on a cold Render instance; show it.
+        // The server redirect takes a moment on a cold instance; show it.
         setLeaving(true);
       }}
       className={cn(
-        'group inline-flex min-h-[46px] w-full touch-manipulation select-none items-center justify-center gap-2.5 rounded-xl border border-[rgb(var(--border))] bg-white px-4 text-sm font-semibold text-ink-800 shadow-sm transition',
-        'hover:border-ink-300 hover:bg-ink-50 active:scale-[0.995]',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[rgb(var(--bg))]',
-        'dark:border-ink-700 dark:bg-ink-900 dark:text-ink-100 dark:hover:bg-ink-800',
-        (disabled || leaving) && 'pointer-events-none opacity-60',
+        'group relative inline-flex h-[54px] w-full touch-manipulation select-none items-center justify-center gap-3 overflow-hidden rounded-[13px] px-5',
+        'bg-white text-[14.5px] font-semibold tracking-[-0.01em] text-[#1f1f1f]',
+        'shadow-[0_1px_2px_rgba(0,0,0,0.28),0_10px_28px_-10px_rgba(0,0,0,0.7)]',
+        'transition-[transform,box-shadow,background-color] duration-200 ease-out',
+        'hover:-translate-y-px hover:bg-[#f6f7f9] hover:shadow-[0_2px_4px_rgba(0,0,0,0.3),0_16px_38px_-12px_rgba(127,86,255,0.55)]',
+        'active:translate-y-0 active:bg-white active:shadow-[0_1px_2px_rgba(0,0,0,0.3)]',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0c12]',
+        busy && 'pointer-events-none opacity-70',
         className,
       )}
     >
+      {/* sheen on hover */}
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-black/[0.045] to-transparent transition-transform duration-700 ease-out group-hover:translate-x-full"
+      />
       {leaving ? (
         <>
-          <span className="h-4 w-4 animate-spin rounded-full border-2 border-ink-300 border-t-ink-700 dark:border-ink-600 dark:border-t-ink-200" />
-          <span>Redirecting to Google…</span>
+          <span className="h-[18px] w-[18px] animate-spin rounded-full border-2 border-ink-300 border-t-ink-700" />
+          <span>Connecting to Google…</span>
         </>
       ) : (
         <>
-          <GoogleGlyph className="h-[18px] w-[18px] shrink-0" />
+          <GoogleGlyph className="h-[19px] w-[19px] shrink-0" />
           <span>{label}</span>
         </>
       )}

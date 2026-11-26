@@ -360,6 +360,26 @@ Open **http://localhost:5173**.
 
 ## Sign-in: Google only
 
+### The auth screen
+
+`/login` and `/register` share one component, `web/src/components/AuthShell.tsx`:
+
+| Part | What it does |
+|---|---|
+| Backdrop | Fixed dark surface (`#08090d`) with three radial glows and a masked 64px grid — no animation, nothing to repaint |
+| Brand story (md and up) | Logo, wordmark, "PERSONAL PRODUCTIVITY OS", a headline and three pillars |
+| Card | Translucent, blurred, hairline border, soft violet glow, top sheen |
+| `GoogleButton` | The only control: 54px white button, official four-colour mark, hover lift + violet glow + sheen, keyboard focus ring, and a "Connecting to Google…" spinner state |
+| Trust row | Encrypted / Private / Yours under the OAuth note |
+| Footer | Copyright line on every viewport |
+
+Both pages carry the same heading and subtitle ("Welcome to AI-LifeHub" /
+"Your personal space for smarter productivity."); `/register` only changes the
+button's `next` to `/onboarding` so a brand-new account lands in setup.
+
+Fonts (Inter, Plus Jakarta Sans) are loaded non-blocking in `index.html`, so an
+unreachable font CDN can never hold the app's first paint.
+
 The app's sign-in UI is Google-only. `/login` and `/register` show one button —
 **Continue with Google** — and nothing else; there is no email/password form, no
 "Forgot password" and no "Reset password" page. Google decides whether the person
