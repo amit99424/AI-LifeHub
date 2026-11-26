@@ -397,6 +397,51 @@ returning sign-in opens their existing account.
 | Disconnecting Google | Refused while Google is the only way in (`AUTH_UI_MODE=google_only`) — `400 google_required`. Nobody can lock themselves out. |
 | `/forgot-password`, `/reset-password` | Kept as routes, redirecting to `/login`, so old bookmarks and emailed links do not 404. The backend endpoints still exist for API clients. |
 
+### Why the build toolchain is a `dependency`, not a `devDependency`
+
+`server/package.json` lists `typescript`, `prisma`, `@types/node` and every
+`@types/*` package under `dependencies`. That looks wrong and is deliberate.
+
+Render installs with `NODE_ENV=production`, and npm then omits
+`devDependencies` **regardless of any `--include=dev` flag in the build
+command** — the flag does not override `NODE_ENV`. With the toolchain in
+`devDependencies`, a deployment would fail at the first type check:
+
+```
+error TS2688: Cannot find type definition file for 'node'.
+```
+
+or, once `@types/node` were forced in some other way, cascade into
+`TS7016: Could not find a declaration file for module 'express'`.
+
+Everything the build *uses* therefore has to survive a production install:
+`tsc`, `prisma` (for `prisma generate`), the type definitions, and the
+declarations for every typed runtime dependency. Only `tsx` stays in
+`devDependencies`, because `npm run dev` is not part of a deploy.
+
+The rule to keep: **if `npm run build` needs it, it is a `dependency`.**
+Adding a typed package means adding its `@types` package as a `dependency`
+too, or the production build breaks while local development stays green.
+
+`web/package.json` follows the same rule: `typescript`, `vite`,
+`@vitejs/plugin-react`, `tailwindcss`, `postcss`, `autoprefixer` and the React
+type packages are `dependencies`, because `npm run build` in `web/` runs
+`tsc --noEmit && vite build`. Its `devDependencies` are empty on purpose — there
+is nothing the build does not need.
+
+Verifying it locally, exactly as the host does:
+
+```bash
+NODE_ENV=production npm ci
+NODE_ENV=production npm --prefix server ci
+NODE_ENV=production npm --prefix server run build   # prisma generate && tsc
+NODE_ENV=production npm --prefix web ci
+NODE_ENV=production npm --prefix web run build      # tsc --noEmit && vite build
+```
+
+Running those without `NODE_ENV=production` proves nothing: development
+installs include `devDependencies`, so the bug stays invisible.
+
 ### Same-origin API proxy (why Google sign-in failed on iPhone)
 
 The app is served from the API's own origin. `web/vercel.json` proxies `/api/*`

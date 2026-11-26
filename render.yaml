@@ -30,6 +30,9 @@ services:
     region: singapore # choose the region closest to your Neon database
     branch: main
     rootDir: .
+    # Plain `npm ci`: with no --include=dev flags. Every package the build needs
+    # (@types/node, typescript, prisma, the @types/* declarations) is a regular
+    # dependency, so this works identically whether NODE_ENV is production or not.
     buildCommand: npm ci && npm --prefix server ci && npm --prefix server run build
     # No preDeployCommand: not available on the free plan.
     # Apply migrations from your machine or a Neon SQL runbook instead.
