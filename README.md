@@ -397,6 +397,37 @@ returning sign-in opens their existing account.
 | Disconnecting Google | Refused while Google is the only way in (`AUTH_UI_MODE=google_only`) — `400 google_required`. Nobody can lock themselves out. |
 | `/forgot-password`, `/reset-password` | Kept as routes, redirecting to `/login`, so old bookmarks and emailed links do not 404. The backend endpoints still exist for API clients. |
 
+### Cookies on a cross-site deployment (why mobile failed)
+
+The SPA runs on `vercel.app` and the API on `onrender.com`. Those are different
+registrable domains, so every XHR the app makes is **cross-site**. Browsers
+withhold `SameSite=Lax` cookies from cross-site requests — Chrome, and Safari on
+iOS especially.
+
+That produced a very specific bug on iPhone: the Google sign-in *succeeded*
+server-side (user created, `Session` and `RefreshToken` rows written, cookies in
+the callback response), then the landing page called `/api/auth/me`, the browser
+sent **no cookie**, the API answered `401`, and the app showed
+`Could not sign you in with Google — session_failed`.
+
+`sameSiteFor()` in `server/src/middleware/auth.ts` now derives the policy from
+the deployment instead of assuming `Lax`:
+
+| `AUTH_COOKIE_SAMESITE` | When the API cookies get `SameSite=` |
+|---|---|
+| `auto` (default) | `None` when `CORS_ORIGINS` lists a host other than `APP_URL`'s (cross-site); `Lax` otherwise |
+| `none` | Always `None` — force this if a host looks same-site but is not |
+| `lax` | Always `Lax` — same-site deployments, or to reproduce the bug |
+
+`None` is only ever emitted together with `Secure`, because a browser silently
+discards an insecure `None` cookie. Local http development keeps `Lax`.
+
+`server/tests/oauth-e2e.mjs` models this with a real browser cookie jar
+(`browserJar`): it drops insecure `None` cookies, withholds `Lax` cookies from
+cross-site requests, and runs the whole chain — `/start` → callback → `/me` →
+`/refresh`. Forcing `AUTH_COOKIE_SAMESITE=lax` makes three of those checks fail
+with `sent: none`, which is the iPhone symptom; the default makes all 41 pass.
+
 ### `AUTH_UI_MODE`
 
 | Value | Sign-in UI | API |

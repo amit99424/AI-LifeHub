@@ -74,6 +74,41 @@ async function tryRefresh(): Promise<boolean> {
   return refreshPromise;
 }
 
+/**
+ * Why a request was refused, in the only terms that help a user: was it the
+ * server, the network, or a cookie the browser did not send?
+ */
+export type AuthProbe = {
+  reachable: boolean;
+  authenticated: boolean;
+  status: number | null;
+  code: string | null;
+  /** True when no cookies reached the API at all (cross-site cookie policy). */
+  cookieMissing: boolean;
+};
+
+/**
+ * Asks the API who we are without throwing, and reports enough detail for the
+ * OAuth landing page to name the real cause on customer support tickets.
+ * Never logs or returns token material.
+ */
+export async function probeSession(): Promise<AuthProbe> {
+  try {
+    const res = await fetch(`${BASE}/api/auth/me`, {
+      credentials: 'include',
+      headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+    });
+    if (res.ok) return { reachable: true, authenticated: true, status: res.status, code: null, cookieMissing: false };
+    const body = (await res.json().catch(() => ({}))) as { error?: { code?: string } };
+    const code = body.error?.code ?? null;
+    // 401 without any cookie ever arriving is the cross-site case: the session
+    // was created server-side but the browser withheld it.
+    return { reachable: true, authenticated: false, status: res.status, code, cookieMissing: code === 'unauthorized' };
+  } catch {
+    return { reachable: false, authenticated: false, status: null, code: 'network', cookieMissing: false };
+  }
+}
+
 async function parse<T>(res: Response): Promise<T> {
   const text = await res.text();
   let data: unknown = {};

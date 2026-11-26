@@ -81,6 +81,7 @@ export async function issueSession(
   userId: string,
   meta: { userAgent?: string; ip?: string },
   res: Parameters<typeof setAuthCookies>[0],
+  req?: Parameters<typeof setAuthCookies>[3],
 ) {
   const expiresAt = new Date(Date.now() + config.REFRESH_TOKEN_TTL_DAYS * 86_400_000);
   const session = await prisma.session.create({
@@ -97,7 +98,7 @@ export async function issueSession(
     },
   });
   const accessToken = signAccessToken(userId, session.id);
-  setAuthCookies(res, accessToken, token);
+  setAuthCookies(res, accessToken, token, req);
   return { accessToken, refreshToken: token, sessionId: session.id, expiresIn: 15 * 60 };
 }
 
@@ -124,7 +125,7 @@ authRouter.post(
       select: userSelect,
     });
 
-    const tokens = await issueSession(user.id, { userAgent: req.headers['user-agent'], ip: req.ip }, res);
+    const tokens = await issueSession(user.id, { userAgent: req.headers['user-agent'], ip: req.ip }, res, req);
     await prisma.auditLog.create({ data: { userId: user.id, action: 'auth.register', ip: req.ip } });
     res.status(201).json({ user: userDto(user), ...tokens });
   }),
@@ -156,7 +157,7 @@ authRouter.post(
     }
 
     await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
-    const tokens = await issueSession(user.id, { userAgent: req.headers['user-agent'], ip: req.ip }, res);
+    const tokens = await issueSession(user.id, { userAgent: req.headers['user-agent'], ip: req.ip }, res, req);
     await prisma.auditLog.create({ data: { userId: user.id, action: 'auth.login', ip: req.ip } });
     res.json({ user: userDto(user), ...tokens });
   }),
@@ -202,7 +203,7 @@ authRouter.post(
     ]);
     const sessionId = record.sessionId!;
     const accessToken = signAccessToken(user.id, sessionId);
-    setAuthCookies(res, accessToken, next.token);
+    setAuthCookies(res, accessToken, next.token, req);
     res.json({ user: userDto(user), accessToken, refreshToken: next.token, expiresIn: 15 * 60 });
   }),
 );

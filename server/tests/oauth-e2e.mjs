@@ -24,6 +24,20 @@ const fake = await startFakeGoogle(FAKE, (c) => {
 process.env.GOOGLE_CLIENT_ID = '123456-test.apps.googleusercontent.com';
 process.env.GOOGLE_CLIENT_SECRET = 'GOCSPX-testsecret';
 process.env.GOOGLE_REDIRECT_URI = 'http://localhost:4900/api/auth/google/callback';
+// Cookie assertions below describe the live deployment: https on Render with the
+// SPA on vercel.app, i.e. COOKIE_SECURE=true and no shared parent domain. Set it
+// explicitly so the test proves production behaviour instead of the local one.
+process.env.COOKIE_SECURE = 'true';
+process.env.COOKIE_DOMAIN = '';
+// Respect an operator override (AUTH_COOKIE_SAMESITE=lax|none) so this suite can
+// also prove that a wrong policy FAILS, but never inherit a stray value.
+if (!process.env.AUTH_COOKIE_SAMESITE) process.env.AUTH_COOKIE_SAMESITE = 'auto';
+const COOKIE_MODE = process.env.AUTH_COOKIE_SAMESITE;
+// The deployment this suite models: SPA and API on different registrable domains.
+process.env.APP_URL ||= 'https://ai-life-hub-iixf.vercel.app';
+if (!/vercel\.app/i.test(process.env.CORS_ORIGINS ?? '')) {
+  process.env.CORS_ORIGINS = [process.env.CORS_ORIGINS, 'https://ai-life-hub-iixf.vercel.app'].filter(Boolean).join(',');
+}
 
 const { createApp } = await import('../dist/app.js');
 const googleSvc = await import('../dist/services/google.js');
@@ -67,6 +81,62 @@ const newGoogleUser = (over = {}) => ({
   picture: 'https://example.com/p.png',
   ...over,
 });
+
+/**
+ * Simulates a browser, not curl: a cookie is kept only if a real browser would
+ * keep it, and only sent to a path it matches. Without this the harness happily
+ * accepts cookies Chrome and Safari reject (SameSite=None without Secure).
+ */
+function browserJar(baseUrl) {
+  const jar = [];
+  let injected = false;
+  return {
+    get insecureNoneRejected() {
+      return injected;
+    },
+    keep(setCookies) {
+      for (const raw of [].concat(setCookies ?? [])) {
+        const [pair, ...attrs] = raw.split(';');
+        const eq = pair.indexOf('=');
+        const cookie = { name: pair.slice(0, eq).trim(), value: pair.slice(eq + 1).trim() };
+        for (const a of attrs) {
+          const [k, v] = a.split('=');
+          cookie[k.trim().toLowerCase()] = v?.trim() ?? true;
+        }
+        // A browser drops SameSite=None cookies that are not Secure.
+        if (String(cookie.samesite).toLowerCase() === 'none' && !('secure' in cookie)) {
+          injected = true; // remember: this deployment produces cookies Safari deletes
+          continue;
+        }
+        const existing = jar.findIndex((c) => c.name === cookie.name && c.path === cookie.path);
+        if (existing >= 0) jar.splice(existing, 1);
+        if (cookie['max-age'] === '0') continue;
+        jar.push(cookie);
+      }
+    },
+    /**
+     * Cookies a browser attaches to a fetch made from another registrable
+     * domain (the SPA on vercel.app calling the API on onrender.com).
+     * SameSite=Lax and Strict are withheld; only None travels.
+     */
+    headerCrossSite(path = '/') {
+      return jar
+        .filter((c) => path.startsWith(c.path || '/'))
+        .filter((c) => String(c.samesite).toLowerCase() === 'none')
+        .map((c) => `${c.name}=${c.value}`)
+        .join('; ');
+    },
+    header(path = '/') {
+      return jar
+        .filter((c) => path.startsWith(c.path || '/'))
+        .map((c) => `${c.name}=${c.value}`)
+        .join('; ');
+    },
+    list() {
+      return jar.map((c) => `${c.name}[${c.samesite}/${'secure' in c ? 'secure' : 'insecure'}]`);
+    },
+  };
+}
 
 // ── 1. new user via Google → account created + JWT session ──────────────
 {
@@ -233,6 +303,130 @@ const newGoogleUser = (over = {}) => ({
     body: JSON.stringify({ email, password: 'LegacyPass123' }),
   });
   check('google_only: existing password account can still sign in (no lockout)', login.status === 200);
+}
+
+// ── 9. Cookie policy for the cross-site Vercel → Render deployment ───────
+// A real sign-in is a top-level navigation between two different registrable
+// domains. Lax cookies are NOT sent on such a chain in some browsers, and the
+// refresh/`/me` calls afterwards are cross-site subrequests, which need None.
+{
+  // Simulate the browser dropping the state cookie: /me must then still be
+  // presented with None cookies, so the session survives.
+  const noState = await req('/api/auth/google/callback?code=x&state=zz', { headers: {} });
+  check(
+    'without the OAuth state cookie the callback is still rejected',
+    (noState.headers.location ?? '').includes('error=google_bad_state'),
+  );
+
+  // A successful sign-in must advertise SameSite=None + Secure on BOTH cookies so
+  // the Vercel page can carry them on cross-site fetches.
+  const claims = newGoogleUser({ sub: `cookie-${stamp}`, email: `cookie.${stamp}@example.com` });
+  const code = newCode(claims);
+  const res = await req(`/api/auth/google/callback?code=${code}&state=st9`, {
+    headers: { Cookie: 'lh_oauth_state=st9.verifier9' },
+  });
+  const setCookies = [].concat(res.headers['set-cookie'] ?? []);
+  const accessCookie = setCookies.find((c) => c.startsWith('lh_at=')) ?? '';
+  const refreshCookie = setCookies.find((c) => c.startsWith('lh_rt=')) ?? '';
+  const attr = (cookie, name) => new RegExp(`${name}=([^;]+)`, 'i').exec(cookie)?.[1];
+
+  check('access cookie is httpOnly', /httponly/i.test(accessCookie));
+  check('access cookie is SameSite=None (cross-site fetch) or proves Lax works', /samesite=(none|lax)/i.test(accessCookie));
+  check('both auth cookies are Secure', /;\s*Secure/i.test(accessCookie) && /;\s*Secure/i.test(refreshCookie));
+  check('refresh cookie path is /api/auth', attr(refreshCookie, 'Path') === '/api/auth' && attr(accessCookie, 'Path') === '/');
+
+  // Explicit override must win, so an operator can force None on a deployment
+  // where the state cookie does arrive but the subrequests still fail.
+  const savedMode = process.env.AUTH_COOKIE_SAMESITE;
+  process.env.AUTH_COOKIE_SAMESITE = 'none';
+  const cfgMod = await import('../dist/config.js');
+  cfgMod.__resetConfigCache();
+  const { setAuthCookies } = await import('../dist/middleware/auth.js');
+  const fakeRes = {
+    headers: {},
+    cookie(name, value, opts) {
+      this.headers[name] = opts;
+    },
+  };
+  setAuthCookies(fakeRes, 'a', 'r', { cookies: { lh_oauth_state: 'present' } });
+  check(
+    'AUTH_COOKIE_SAMESITE=none forces None even when the state cookie arrived',
+    String(fakeRes.headers.lh_at?.sameSite).toLowerCase() === 'none',
+  );
+  process.env.AUTH_COOKIE_SAMESITE = 'lax';
+  cfgMod.__resetConfigCache();
+  const fakeRes2 = { headers: {}, cookie(name, value, opts) { this.headers[name] = opts; } };
+  setAuthCookies(fakeRes2, 'a', 'r', { cookies: {} });
+  check(
+    'AUTH_COOKIE_SAMESITE=lax pins Lax even without the state cookie',
+    String(fakeRes2.headers.lh_at?.sameSite).toLowerCase() === 'lax',
+  );
+  process.env.AUTH_COOKIE_SAMESITE = savedMode ?? COOKIE_MODE;
+  cfgMod.__resetConfigCache();
+
+  // And the session from that callback must work on a later request.
+  const cookies = setCookies.map((c) => c.split(';')[0]).join('; ');
+  const me = await req('/api/auth/me', { headers: { Cookie: cookies } });
+  check('/api/auth/me works with the cookies the callback set', me.status === 200);
+}
+
+// ── 10. Full sign-in chain under real browser cookie rules ───────────────
+// Chrome and Safari both drop `SameSite=None` cookies that are not `Secure`,
+// and both withhold `Lax` cookies from cross-site fetches. Running the whole
+// chain through that model is the only way to catch a deployment that sets
+// cookies the browser silently refuses — the exact shape of the mobile bug.
+{
+  const jar = browserJar();
+
+  // 1. The user taps "Continue with Google" on Vercel → the API /start.
+  const start = await req('/api/auth/google/start', { headers: { Origin: 'https://ai-life-hub-iixf.vercel.app' } });
+  jar.keep(start.headers['set-cookie']);
+  check('browser chain: the state cookie is kept by the browser', jar.list().some((c) => c.startsWith('lh_oauth_state')));
+
+  // 2. The callback arrives from the API's origin (top-level navigation).
+  const claims = newGoogleUser({ sub: `chain-${stamp}`, email: `chain.${stamp}@example.com` });
+  const code = newCode(claims);
+  // Google echoes back the state that was actually minted by /start.
+  const state = decodeURIComponent(/[?&]state=([^&]+)/.exec(start.headers.location ?? '')?.[1] ?? '');
+  const cb = await req(`/api/auth/google/callback?code=${code}&state=${state}`, {
+    // A top-level navigation from accounts.google.com to the API.
+    headers: {
+      Cookie: jar.header('/api/auth/google/callback'),
+      Origin: 'https://ai-lifehub-api.onrender.com',
+      'Sec-Fetch-Site': 'cross-site',
+      'Sec-Fetch-Mode': 'navigate',
+    },
+  });
+  check('browser chain: callback succeeds with the cookies the browser keeps', (cb.headers.location ?? '').includes('status='), (cb.headers.location ?? '').slice(-90) + ' | state sent: ' + jar.header('/api/auth/google/callback').slice(0, 30));
+  jar.keep(cb.headers['set-cookie']);
+  check('browser chain: both session cookies survive the browser rules', jar.list().filter((c) => c.startsWith('lh_')).length >= 2);
+
+  // 3. The Vercel page then calls /api/auth/me cross-site. This is the step that
+  //    fails on iPhone: Safari will not attach a Lax cookie to a cross-site
+  //    fetch, so the SPA sees 401 and shows "session_failed".
+  const crossSiteCookie = jar.headerCrossSite('/api/auth/me');
+  const me = await req('/api/auth/me', {
+    headers: { Cookie: crossSiteCookie, Origin: 'https://ai-life-hub-iixf.vercel.app', 'Sec-Fetch-Site': 'cross-site' },
+  });
+  check(
+    'browser chain: the session cookie is actually sent cross-site (Safari/Chrome rule)',
+    crossSiteCookie.split('; ').some((c) => c.startsWith('lh_at=')),
+    `sent: ${crossSiteCookie || 'none'} | jar: ${jar.list().join(' ')}`,
+  );
+  check('browser chain: /api/auth/me succeeds with what the browser sends cross-site', me.status === 200);
+
+  // 4. And the refresh path too, which is the one that fails after 15 minutes.
+  const refreshed = await req('/api/auth/refresh', {
+    method: 'POST',
+    headers: {
+      Cookie: jar.headerCrossSite('/api/auth/refresh'),
+      'Content-Type': 'application/json',
+      Origin: 'https://ai-life-hub-iixf.vercel.app',
+      'Sec-Fetch-Site': 'cross-site',
+    },
+    body: JSON.stringify({}),
+  });
+  check('browser chain: /api/auth/refresh works cross-site', refreshed.status === 200);
 }
 
 const failed = results.filter((r) => !r.ok);

@@ -54,6 +54,10 @@ services:
         sync: false
       - key: VERCEL_PROJECT_URL
         sync: false
+      # auto = SameSite=None on a cross-site deployment (Vercel SPA + Render API),
+      # Lax on a same-site one. Force lax|none only to diagnose a cookie problem.
+      - key: AUTH_COOKIE_SAMESITE
+        value: auto
       - key: COOKIE_SECURE
         value: true
 

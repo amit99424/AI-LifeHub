@@ -1,4 +1,7 @@
 import type { NextFunction, Request, Response } from 'express';
+
+/** Express request; the bare `Request` in this file would be the DOM type. */
+type AuthRequest = Request;
 import { ApiError } from '../lib/http.js';
 import { verifyAccessToken } from '../lib/auth.js';
 import { prisma } from '../lib/prisma.js';
@@ -106,13 +109,48 @@ export function userToday(req: Request): string {
  * two settings are derived from one another. Same-site deployments (or local
  * development) keep Lax, which is stricter.
  */
-const CROSS_SITE = config.COOKIE_SECURE && !config.COOKIE_DOMAIN;
-const SAME_SITE: 'lax' | 'none' = CROSS_SITE ? 'none' : 'lax';
+/**
+ * Which SameSite policy the auth cookies get.
+ *
+ * A cross-site deployment (SPA on vercel.app, API on onrender.com) needs
+ * `None` on every later fetch: the browser withholds Lax cookies from a
+ * cross-site request, so `/api/auth/me` answers 401 and the SPA shows
+ * "session_failed" even though the session exists. That is the iPhone bug.
+ *
+ * The cookie must ALSO survive the OAuth callback itself, which is a top-level
+ * navigation to the API. None is sent on top-level cross-site navigations too,
+ * so it satisfies both; the only risk is a browser refusing None, which it only
+ * does when the cookie is not Secure.
+ *
+ * `auto` therefore means: None when the deployment is cross-site (https, no
+ * shared parent domain), Lax when it is same-site or local http. Set
+ * AUTH_COOKIE_SAMESITE explicitly to override either way.
+ */
+function sameSiteFor(_req: AuthRequest): 'lax' | 'none' | 'strict' {
+  if (!config.COOKIE_SECURE) return 'lax'; // local http development
+  if (config.COOKIE_DOMAIN) return 'lax'; // cookies shared across subdomains
 
-export function setAuthCookies(res: Response, accessToken: string, refreshToken: string) {
+  const override = config.AUTH_COOKIE_SAMESITE;
+  if (override === 'none') return 'none';
+  if (override === 'lax') return 'lax';
+
+  // auto: cross-site deployment → None (required for cross-site fetches).
+  return config.CORS_ORIGINS.some((o) => {
+    try {
+      return new URL(o).host !== new URL(config.APP_URL).host;
+    } catch {
+      return false;
+    }
+  })
+    ? 'none'
+    : 'lax';
+}
+
+export function setAuthCookies(res: Response, accessToken: string, refreshToken: string, req?: AuthRequest) {
+  const sameSite = sameSiteFor(req as AuthRequest);
   const base = {
     httpOnly: true,
-    sameSite: SAME_SITE,
+    sameSite,
     secure: config.COOKIE_SECURE,
     domain: config.COOKIE_DOMAIN || undefined,
     path: '/',
@@ -121,10 +159,11 @@ export function setAuthCookies(res: Response, accessToken: string, refreshToken:
   res.cookie('lh_rt', refreshToken, { ...base, path: '/api/auth', maxAge: config.REFRESH_TOKEN_TTL_DAYS * 86_400_000 });
 }
 
-export function clearAuthCookies(res: Response) {
+export function clearAuthCookies(res: Response, req?: AuthRequest) {
+  const sameSite = sameSiteFor(req as AuthRequest);
   const base = {
     httpOnly: true,
-    sameSite: SAME_SITE,
+    sameSite,
     secure: config.COOKIE_SECURE,
     domain: config.COOKIE_DOMAIN || undefined,
   };

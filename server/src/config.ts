@@ -55,6 +55,11 @@ const EnvSchema = z.object({
   REFRESH_TOKEN_TTL_DAYS: int(30, 1),
   COOKIE_SECURE: bool(false),
   COOKIE_DOMAIN: z.string().optional(),
+  // SameSite policy for the auth cookies on a cross-site deployment.
+  //   auto (default) - None unless the OAuth state cookie proved Lax works here
+  //   none           - always None (required for Vercel frontend + Render API)
+  //   lax            - always Lax (same-site setups, or a deliberate lockdown)
+  AUTH_COOKIE_SAMESITE: z.enum(['auto', 'none', 'lax']).default('auto'),
 
   // ── Google OAuth 2.0 ──────────────────────────────────────────
   // Client ID is public (it appears in the consent-screen URL). The secret is

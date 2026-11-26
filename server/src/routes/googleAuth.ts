@@ -162,6 +162,7 @@ googleAuthRouter.get(
         account.userId,
         { userAgent: req.headers['user-agent'], ip: req.ip },
         res,
+        req,
       );
       await prisma.auditLog
         .create({
@@ -173,6 +174,29 @@ googleAuthRouter.get(
           },
         })
         .catch(() => undefined);
+
+      // The SPA finishes the sign-in by calling /api/auth/me with the cookies it
+      // now holds. Log metadata only — never values — so a mobile failure can be
+      // diagnosed from Render logs alone.
+      {
+        const setCookie = res.getHeader('set-cookie');
+        const list = Array.isArray(setCookie) ? setCookie : typeof setCookie === 'string' ? [setCookie] : [];
+        const described = list.map((c) => {
+          const name = c.split('=')[0];
+          const samesite = /Samesite=(\w+)/i.exec(c)?.[1] ?? 'unset';
+          const secure = /;\s*Secure/i.test(c) ? 'secure' : 'insecure';
+          const path = /Path=([^;]+)/i.exec(c)?.[1] ?? '/';
+          return `${name}[${samesite}/${secure}/path=${path}]`;
+        });
+        // eslint-disable-next-line no-console
+        console.info(
+          `[oauth] session ${session.sessionId} issued for user ${account.userId} (${account.outcome}); cookies: ${
+            described.join(' ') || 'none'
+          }; state-cookie-received: ${req.cookies?.[OAUTH_STATE_COOKIE] ? 'yes' : 'no'}; origin: ${
+            req.headers.origin ?? 'none'
+          }; ua: ${String(req.headers['user-agent'] ?? '').slice(0, 40)}`,
+        );
+      }
 
       // The SPA finishes the sign-in by calling /api/auth/me with the cookies it
       // now holds. `next` tells it where to go; no user data travels in the URL.

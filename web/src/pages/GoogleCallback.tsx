@@ -5,14 +5,21 @@
  * and set the same httpOnly cookies that email/password login sets. This page
  * only asks the API who we are now, then sends the user onward. No token or
  * profile data ever travels through the URL.
+ *
+ * Mobile Safari is strict about cookies on a redirect chain that crosses
+ * origins (Vercel → Render → Google → Render → Vercel), so "the session cookie
+ * never arrived" is a real outcome, not a rare one. When that happens the cookie
+ * may still turn up a moment later — the browser is allowed to finish writing it
+ * — so this page gives it a generous window, retries, and then names the actual
+ * cause instead of a generic failure.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { AlertTriangle, ArrowLeft, Loader2, Sparkles } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Loader2, RotateCcw, Sparkles } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
-import { isTransientError } from '@/lib/api';
+import { probeSession, type AuthProbe } from '@/lib/api';
 
 const STATUS_COPY: Record<string, string> = {
   login: 'Welcome back — signing you in…',
@@ -34,7 +41,30 @@ const ERROR_HINTS: Record<string, string> = {
   identity_in_use: 'That Google account is already connected to another AI-LifeHub account.',
   account_deleted: 'This account has been deleted.',
   google_failed: 'Google sign-in failed. Please try again.',
+  session_failed: 'You signed in with Google, but this browser did not keep the sign-in cookies.',
+  server_unreachable: 'The server could not be reached from this browser.',
 };
+
+/** How long we keep retrying before telling the user the session did not arrive. */
+const BUDGET_MS = 30_000;
+const ATTEMPTS = 6;
+
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+/** Turns a probe into the sentence the user actually needs to read. */
+function describe(probe: AuthProbe): string {
+  if (!probe.reachable) {
+    return 'The AI-LifeHub API could not be reached from this browser. Check your connection and try again.';
+  }
+  if (probe.cookieMissing) {
+    return 'Your Google account was verified, but this browser blocked the sign-in cookies. This usually happens when cookies are disabled, when the site is opened in a private tab or an in-app browser, or when the page is opened from a link that is not the app’s own domain.';
+  }
+  return `Your Google account was verified, but the server refused the session (HTTP ${probe.status ?? '—'}${
+    probe.code ? `, ${probe.code}` : ''
+  }).`;
+}
 
 export default function GoogleCallback() {
   const [params] = useSearchParams();
@@ -42,12 +72,47 @@ export default function GoogleCallback() {
   const { refreshUser } = useAuth();
   const [error, setError] = useState<{ code: string; message: string } | null>(null);
   const [slow, setSlow] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const ran = useRef(false);
 
   const errorCode = params.get('error');
   const errorMessage = params.get('message');
   const status = params.get('status') ?? 'login';
   const next = params.get('next') ?? '/dashboard';
+
+  /**
+   * Wait for the session cookies to be visible to the API, then navigate.
+   * Safe to call again from the error screen ("Check again").
+   */
+  const settle = useCallback(async () => {
+    const started = Date.now();
+    let last: AuthProbe | null = null;
+
+    for (let i = 0; i < ATTEMPTS; i += 1) {
+      try {
+        await refreshUser();
+        navigate(next.startsWith('/') ? next : '/dashboard', { replace: true });
+        return;
+      } catch {
+        /* fall through to the probe so we can name the cause */
+      }
+
+      last = await probeSession();
+      setAttempt(i + 1);
+      if (last.authenticated) {
+        navigate(next.startsWith('/') ? next : '/dashboard', { replace: true });
+        return;
+      }
+      if (Date.now() - started > BUDGET_MS) break;
+      // 1s, 2s, 3s, 4s, 5s between attempts.
+      await sleep(1000 * (i + 1));
+    }
+
+    setError({
+      code: last && !last.reachable ? 'server_unreachable' : 'session_failed',
+      message: last ? describe(last) : 'Signed in with Google, but the session could not be established.',
+    });
+  }, [navigate, next, refreshUser]);
 
   useEffect(() => {
     if (ran.current) return;
@@ -58,35 +123,10 @@ export default function GoogleCallback() {
       return;
     }
 
-    const slowTimer = setTimeout(() => setSlow(true), 6000);
-
-    (async () => {
-      // The cookies are already set. Retry a couple of times: a Render cold start
-      // can fail the very first request after the redirect.
-      for (let attempt = 0; attempt < 3; attempt += 1) {
-        try {
-          await refreshUser();
-          clearTimeout(slowTimer);
-          // Replace, so Back does not return to this interstitial page.
-          navigate(next.startsWith('/') ? next : '/dashboard', { replace: true });
-          return;
-        } catch (err) {
-          const transient = isTransientError(err) || (err as { status?: number }).status === 401;
-          if (!transient || attempt === 2) {
-            clearTimeout(slowTimer);
-            setError({
-              code: 'session_failed',
-              message:
-                (err as Error).message ||
-                'Signed in with Google, but the session could not be established. Please try again.',
-            });
-            return;
-          }
-          await new Promise((r) => setTimeout(r, 1200 * (attempt + 1)));
-        }
-      }
-    })();
-
+    // The cookies are already set. Give a cold Render instance, and Safari
+    // persisting a cross-site cookie, a real window instead of three quick tries.
+    const slowTimer = setTimeout(() => setSlow(true), 5000);
+    void settle().finally(() => clearTimeout(slowTimer));
     return () => clearTimeout(slowTimer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -114,9 +154,18 @@ export default function GoogleCallback() {
             >
               <ArrowLeft className="h-4 w-4" /> Back to sign in
             </Link>
-            <Link to="/register" className="text-xs font-semibold text-brand-600 hover:underline dark:text-brand-400">
-              Create an account instead
-            </Link>
+            <button
+              type="button"
+              onClick={() => {
+                setError(null);
+                setSlow(false);
+                setAttempt(0);
+                void settle();
+              }}
+              className="inline-flex min-h-[40px] items-center justify-center gap-2 rounded-xl border border-[rgb(var(--border))] text-xs font-semibold text-ink-600 transition hover:bg-ink-50 dark:text-ink-300 dark:hover:bg-ink-800"
+            >
+              <RotateCcw className="h-3.5 w-3.5" /> Check again
+            </button>
           </div>
           <p className="mt-4 font-mono text-[10px] text-ink-400">code: {error.code}</p>
         </div>
@@ -135,7 +184,8 @@ export default function GoogleCallback() {
       </div>
       {slow && (
         <p className="max-w-xs text-center text-[11px] leading-relaxed text-ink-400">
-          Still connecting… the server may be waking up (Render free tier). This can take up to a minute.
+          Still connecting… the server may be waking up. This can take up to a minute
+          {attempt > 0 ? ` (attempt ${attempt + 1})` : ''}.
         </p>
       )}
     </div>
