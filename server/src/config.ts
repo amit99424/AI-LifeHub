@@ -59,14 +59,16 @@ const EnvSchema = z.object({
   // ── Google OAuth 2.0 ──────────────────────────────────────────
   // Client ID is public (it appears in the consent-screen URL). The secret is
   // server-only and must never reach the frontend bundle.
-  GOOGLE_CLIENT_ID: z.string().optional().default(''),
-  GOOGLE_CLIENT_SECRET: z.string().optional().default(''),
+  // Pasted values from a dashboard often carry a trailing newline or spaces;
+  // a trailing "\n" inside a client id makes Google answer invalid_client.
+  GOOGLE_CLIENT_ID: z.string().trim().optional().default(''),
+  GOOGLE_CLIENT_SECRET: z.string().trim().optional().default(''),
   // Must exactly match an "Authorized redirect URI" in Google Cloud Console.
   // The backend handles the callback and then redirects the browser onward.
-  GOOGLE_REDIRECT_URI: z.string().optional().default(''),
+  GOOGLE_REDIRECT_URI: z.string().trim().optional().default(''),
   // Where the backend sends the browser after a successful/failed sign-in.
-  GOOGLE_SUCCESS_REDIRECT: z.string().optional().default(''),
-  GOOGLE_FAILURE_REDIRECT: z.string().optional().default(''),
+  GOOGLE_SUCCESS_REDIRECT: z.string().trim().optional().default(''),
+  GOOGLE_FAILURE_REDIRECT: z.string().trim().optional().default(''),
   GOOGLE_ALLOWED_DOMAINS: z
     .string()
     .optional()
