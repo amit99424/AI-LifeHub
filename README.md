@@ -26,6 +26,7 @@
 - [The AI pipeline](#the-ai-pipeline)
 - [Repository structure](#repository-structure)
 - [Getting started](#getting-started)
+- [Google sign-in (OAuth 2.0)](#google-sign-in-oauth-20)
 - [Environment variables](#environment-variables)
 - [Database setup & migrations](#database-setup--migrations)
 - [Running the app](#running-the-app)
@@ -356,6 +357,149 @@ Open **http://localhost:5173**.
 
 ---
 
+## Google sign-in (OAuth 2.0)
+
+Users can create an account and sign in with Google. Email/password sign-up and
+login are unchanged and keep working alongside it.
+
+### How it works
+
+```
+Browser                 API (Render)                    Google
+   │  GET /api/auth/google/start  │                          │
+   │─────────────────────────────>│  state + PKCE cookie      │
+   │  302 → accounts.google.com   │                          │
+   │─────────────────────────────────────────────────────────>│  consent
+   │  302 → /api/auth/google/callback?code=…&state=…          │
+   │─────────────────────────────>│  POST /token (client     │
+   │                              │  secret, server-to-server)│
+   │                              │──────────────────────────>│
+   │                              │  verify ID token (RS256   │
+   │                              │  against Google's JWKS)   │
+   │                              │  link or create user      │
+   │                              │  issue JWT + refresh pair │
+   │  302 → /auth/google/callback?status=created&next=/onboarding
+   │<─────────────────────────────│  (httpOnly cookies set)   │
+   │  SPA calls /api/auth/me with the cookies it now holds     │
+```
+
+Why the server does the callback rather than the browser: the **client secret
+never leaves the backend**, and no user detail is ever accepted from the
+frontend. The only thing the browser sends is a one-time `code`.
+
+Sessions are identical to password login — the same `Session` row, the same
+rotating refresh token, the same 15-minute access JWT and the same httpOnly
+cookies — so every existing feature (Tasks, Habits, Journal, Mood, Sessions,
+Analytics, AI Chat, Profile) works with a Google account with no changes.
+
+### Account rules
+
+| Situation | What happens |
+|---|---|
+| First Google sign-in | A `User` row is created (no password) plus an `OAuthAccount` row; onboarding starts |
+| Returning Google user | Signed into the same account (keyed by Google's stable `sub`, not the email) |
+| Google email changed | Same account — the identity is keyed by `sub` |
+| Email already has a password account | The Google identity is **linked** to that account when Google reports the email as verified. The password keeps working; no duplicate is created |
+| Google email not verified | Refused — it cannot be matched to an existing account safely |
+| Google account deleted / linked elsewhere | Refused with an explicit error |
+| Two callbacks racing | `@@unique([provider, providerAccountId])` makes a duplicate impossible |
+
+Users can connect or disconnect Google later in **Settings → Sign-in methods**.
+Disconnecting is refused when the account has no password, so nobody can lock
+themselves out.
+
+### 1. Google Cloud Console
+
+1. Open <https://console.cloud.google.com/> and create (or pick) a project.
+2. **APIs & Services → OAuth consent screen**
+   - User type: **External**.
+   - App name, support email, developer contact.
+   - Scopes: `openid`, `email`, `profile` (all non-sensitive — no Google
+     verification review is required).
+   - While the app is in **Testing**, add your own Google account under **Test
+     users**, or publish the app.
+3. **APIs & Services → Credentials → Create credentials → OAuth client ID**
+   - Application type: **Web application**.
+   - **Authorized JavaScript origins** (no path, no trailing slash):
+     ```
+     http://localhost:5173
+     https://ai-lifehub.vercel.app          # your Vercel domain
+     ```
+   - **Authorized redirect URIs** (exact match, includes the path):
+     ```
+     http://localhost:4000/api/auth/google/callback
+     https://ai-lifehub-api.onrender.com/api/auth/google/callback
+     ```
+     Add `/link/callback` versions too if you use **Settings → Connect Google**:
+     ```
+     https://ai-lifehub-api.onrender.com/api/auth/google/link/callback
+     ```
+   - Copy the **Client ID** and **Client secret**.
+4. You can always re-read the exact URI the server expects:
+   `GET https://ai-lifehub-api.onrender.com/api/auth/google/redirect-uri`
+
+> A redirect-URI mismatch is the single most common failure. Google answers
+> `Error 400: redirect_uri_mismatch` and the backend never sees the request.
+
+### 2. Render (backend)
+
+**Dashboard → your service → Environment**, add:
+
+| Key | Value |
+|---|---|
+| `GOOGLE_CLIENT_ID` | `…apps.googleusercontent.com` |
+| `GOOGLE_CLIENT_SECRET` | `GOCSPX-…` (**secret**) |
+| `GOOGLE_REDIRECT_URI` | `https://ai-lifehub-api.onrender.com/api/auth/google/callback` |
+| `GOOGLE_SUCCESS_REDIRECT` | `https://ai-lifehub.vercel.app/auth/google/callback` |
+| `GOOGLE_FAILURE_REDIRECT` | `https://ai-lifehub.vercel.app/auth/google/callback` |
+
+`GOOGLE_ALLOWED_DOMAINS` (optional) restricts sign-in to email domains, e.g.
+`yourcompany.com`. Then **Manual Deploy**.
+
+`render.yaml` already declares all five keys with `sync: false`, so they are set
+in the dashboard and never committed.
+
+### 3. Vercel (frontend)
+
+**No Google variables belong in Vercel.** The client secret is server-only, and
+the frontend does not need the client id — the button links straight to the
+backend, which knows both. Vercel keeps only:
+
+| Key | Value |
+|---|---|
+| `VITE_API_URL` | `https://ai-lifehub-api.onrender.com` |
+
+If `VITE_API_URL` is missing the SPA will call its own origin and the button
+will report that Google sign-in is not configured.
+
+### 4. Verify
+
+```bash
+# Should report configured:true and the exact redirect URI
+curl https://ai-lifehub-api.onrender.com/api/auth/google/status
+curl https://ai-lifehub-api.onrender.com/api/auth/google/redirect-uri
+# The health endpoint also exposes the capability
+curl https://ai-lifehub-api.onrender.com/api/health   # → "google": { "configured": true }
+```
+
+Then open the login page: the **Continue with Google** button appears only when
+the backend reports it is configured.
+
+### Tests
+
+```bash
+npm --prefix server test          # 18 unit tests (includes ID-token verification)
+npm --prefix server run test:oauth  # 22 end-to-end checks against a real database
+```
+
+`test:oauth` signs its own ID tokens with a throwaway RSA key and points the
+service at a local stand-in for Google's token/JWKS endpoints, so the whole
+callback path runs offline: new signup, returning user, changed email, duplicate
+email linking, unverified email, forged `state`, replayed code, Google-only
+lockout protection and password login still working after linking.
+
+---
+
 ## Environment variables
 
 All backend variables live in `server/.env` (see `server/.env.example`).
@@ -373,6 +517,13 @@ All backend variables live in `server/.env` (see `server/.env.example`).
 | `REFRESH_TOKEN_TTL_DAYS` | no | `30` | Refresh token lifetime |
 | `COOKIE_SECURE` | no | `false` | `true` in production (HTTPS only) |
 | `COOKIE_DOMAIN` | no | — | Optional cookie domain |
+| `GOOGLE_CLIENT_ID` | for Google | — | OAuth 2.0 Web client id (public) |
+| `GOOGLE_CLIENT_SECRET` | for Google | — | OAuth client secret — **server only** |
+| `GOOGLE_REDIRECT_URI` | for Google | — | Backend callback URL; must match Google Console exactly |
+| `GOOGLE_SUCCESS_REDIRECT` | no | `APP_URL/auth/google/callback` | SPA route after a successful sign-in |
+| `GOOGLE_FAILURE_REDIRECT` | no | `APP_URL/auth/google/callback` | SPA route after a failed sign-in |
+| `GOOGLE_ALLOWED_DOMAINS` | no | — | Restrict Google sign-in to these email domains |
+| `GOOGLE_AUTO_LINK` | no | `true` | Link a Google identity to an existing account with the same verified email |
 | `AI_PROVIDER` | no | `none` | `gemini` \| `openai` \| `none` |
 | `GEMINI_API_KEY` | if gemini | — | Google AI Studio key |
 | `GEMINI_MODEL` | no | `gemini-2.5-flash` | Model id |

@@ -17,7 +17,8 @@
     "db:reset": "prisma migrate reset --force",
     "test:unit": "node .test-dist/tests/run.js",
     "seed": "node .seed-dist/prisma/seed.js",
-    "start:migrate": "prisma migrate deploy && node dist/index.js"
+    "start:migrate": "prisma migrate deploy && node dist/index.js",
+    "test:oauth": "node tests/oauth-e2e.mjs"
   },
   "dependencies": {
     "@prisma/client": "6.19.3",

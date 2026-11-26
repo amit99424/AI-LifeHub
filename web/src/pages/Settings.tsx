@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Check, Database, Download, KeyRound, LogOut, Monitor, Moon, Palette, Save, Shield, Sparkles, Sun, Trash2, User } from 'lucide-react';
+import { AlertTriangle, Check, Database, Download, KeyRound, Link2, LogOut, Monitor, Moon, Palette, Save, Shield, Sparkles, Sun, Trash2, Unlink, User } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth, useProfile, useTheme, useUpdateProfile, useUpdateSettings, type ThemeMode } from '@/lib/auth';
 import type { AiStatus } from '@/lib/types';
 import { Badge, Button, Card, CardHeader, Field, Input, Modal, Select, Skeleton, Textarea, toast } from '@/components/ui';
 import { cn, formatDate, relativeTime } from '@/lib/utils';
+import { fetchGoogleStatus, googleStartUrl } from '@/components/GoogleButton';
 
 const TIMEZONES = [
   'Asia/Kolkata',
@@ -35,6 +36,26 @@ export default function Settings() {
   const [deleteText, setDeleteText] = useState('');
 
   const aiStatus = useQuery({ queryKey: ['ai-status'], queryFn: () => api.get<AiStatus>('/api/ai/status') });
+
+  // Sign-in methods: which ways this account can be accessed.
+  type Methods = {
+    password: boolean;
+    google: { email: string; linkedAt: string } | null;
+    googleAvailable: boolean;
+    canUnlinkGoogle: boolean;
+  };
+  const methods = useQuery({ queryKey: ['auth-methods'], queryFn: () => api.get<Methods>('/api/auth/methods') });
+  const googleStatus = useQuery({ queryKey: ['google-status'], queryFn: fetchGoogleStatus });
+
+  const unlinkGoogle = useMutation({
+    mutationFn: () => api.post('/api/auth/google/unlink'),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['auth-methods'] });
+      toast('Google disconnected from your account.', 'success');
+    },
+    onError: (e) => toast((e as Error).message, 'error'),
+  });
+
   const sessions = useQuery({ queryKey: ['sessions-list'], queryFn: () => api.get<{ sessions: { id: string; userAgent: string | null; ip: string | null; createdAt: string; lastSeenAt: string; current: boolean }[] }>('/api/auth/sessions') });
 
   useEffect(() => {
@@ -270,6 +291,58 @@ export default function Settings() {
                 </div>
               </div>
             )}
+          </Card>
+
+          <Card>
+            <CardHeader title="Sign-in methods" subtitle="How you get into this account" icon={<KeyRound className="h-4.5 w-4.5" />} />
+            <div className="space-y-2.5">
+              <div className="flex items-start gap-2 rounded-lg border border-[rgb(var(--border))] p-2.5">
+                <KeyRound className="mt-0.5 h-3.5 w-3.5 shrink-0 text-ink-400" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-[11px] font-semibold text-ink-800 dark:text-ink-100">Email &amp; password</p>
+                  <p className="text-[10px] text-ink-400">
+                    {methods.data?.password ? 'Enabled for this account' : 'Not set — you sign in with Google'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-2 rounded-lg border border-[rgb(var(--border))] p-2.5">
+                <Link2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-ink-400" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-[11px] font-semibold text-ink-800 dark:text-ink-100">Google</p>
+                  {methods.data?.google ? (
+                    <p className="truncate text-[10px] text-ink-400">
+                      Connected as {methods.data.google.email} · {relativeTime(methods.data.google.linkedAt)}
+                    </p>
+                  ) : (
+                    <p className="text-[10px] text-ink-400">
+                      {googleStatus.data?.configured ? 'Not connected' : 'Google sign-in is not configured on this server'}
+                    </p>
+                  )}
+                </div>
+                {methods.data?.google ? (
+                  <button
+                    onClick={() => unlinkGoogle.mutate()}
+                    disabled={!methods.data.canUnlinkGoogle || unlinkGoogle.isPending}
+                    title={methods.data.canUnlinkGoogle ? 'Disconnect Google' : 'Set a password first so you can still sign in'}
+                    className="flex items-center gap-1 text-[10px] font-semibold text-rose-600 hover:underline disabled:pointer-events-none disabled:opacity-40"
+                  >
+                    <Unlink className="h-3 w-3" /> Disconnect
+                  </button>
+                ) : (
+                  googleStatus.data?.configured && (
+                    <a href={googleStartUrl('/settings')} className="text-[10px] font-semibold text-brand-600 hover:underline dark:text-brand-400">
+                      Connect
+                    </a>
+                  )
+                )}
+              </div>
+              {methods.data?.google && !methods.data.canUnlinkGoogle && (
+                <p className="text-[10px] leading-relaxed text-amber-700 dark:text-amber-300">
+                  This account signs in with Google only. Keep it connected — there is no password to fall back on.
+                </p>
+              )}
+            </div>
           </Card>
 
           <Card>

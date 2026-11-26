@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { UserPlus } from 'lucide-react';
 import { AuthLayout, AuthLink, FormError, PasswordStrength, useFormState } from '@/components/AuthLayout';
 import { Button, Field, Input } from '@/components/ui';
+import { GoogleButton, OrDivider } from '@/components/GoogleButton';
 import { useAuth } from '@/lib/auth';
 
 export default function Register() {
@@ -42,6 +43,9 @@ export default function Register() {
         </span>
       }
     >
+      <GoogleButton next="/onboarding" label="Sign up with Google" />
+      <OrDivider label="or sign up with email" />
+
       <form onSubmit={onSubmit} className="space-y-4" noValidate>
         <FormError message={error} />
         <Field label="Full name">

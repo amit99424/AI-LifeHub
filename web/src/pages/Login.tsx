@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, LogIn } from 'lucide-react';
 import { AuthLayout, AuthLink, FormError, useFormState } from '@/components/AuthLayout';
 import { Button, Field, Input } from '@/components/ui';
+import { GoogleButton, OrDivider } from '@/components/GoogleButton';
 import { useAuth } from '@/lib/auth';
 
 export default function Login() {
@@ -22,7 +23,12 @@ export default function Login() {
       await login(values.email.trim(), values.password);
       navigate(location.state?.from || '/dashboard', { replace: true });
     } catch (err) {
-      setError((err as Error).message || 'Could not sign in');
+      const e = err as { message?: string; code?: string };
+      setError(
+        e.code === 'use_google_signin'
+          ? 'This account uses Google sign-in. Use “Continue with Google” below.'
+          : e.message || 'Could not sign in',
+      );
     } finally {
       setLoading(false);
     }
@@ -38,6 +44,9 @@ export default function Login() {
         </span>
       }
     >
+      <GoogleButton next={location.state?.from || '/dashboard'} />
+      <OrDivider label="or sign in with email" />
+
       <form onSubmit={onSubmit} className="space-y-4" noValidate>
         <FormError message={error} />
         <Field label="Email">

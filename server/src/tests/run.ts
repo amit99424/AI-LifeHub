@@ -10,7 +10,7 @@
  */
 process.env.NODE_ENV = 'test';
 
-const TEST_FILES = ['./features.test.js'];
+const TEST_FILES = ['./features.test.js', './google.test.js'];
 
 type Case = { name: string; fn: () => void | Promise<void> };
 

@@ -6,6 +6,7 @@ import { isTransientError } from '@/lib/api';
 import { AppShell } from '@/components/AppShell';
 
 const Login = lazy(() => import('@/pages/Login'));
+const GoogleCallback = lazy(() => import('@/pages/GoogleCallback'));
 const Register = lazy(() => import('@/pages/Register'));
 const ForgotPassword = lazy(() => import('@/pages/ForgotPassword'));
 const ResetPassword = lazy(() => import('@/pages/ResetPassword'));
@@ -97,6 +98,9 @@ export default function App() {
             <Routes>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/login" element={<PublicOnly><Login /></PublicOnly>} />
+              {/* Server-side Google OAuth redirect target. Must stay public: the
+                  cookies are set before the SPA is reached. */}
+              <Route path="/auth/google/callback" element={<Suspense fallback={<FullPageLoader />}><GoogleCallback /></Suspense>} />
               <Route path="/register" element={<PublicOnly><Register /></PublicOnly>} />
               <Route path="/forgot-password" element={<PublicOnly><ForgotPassword /></PublicOnly>} />
               <Route path="/reset-password" element={<PublicOnly><ResetPassword /></PublicOnly>} />

@@ -35,7 +35,7 @@ const loginSchema = z.object({ email: emailSchema, password: z.string().min(1, '
 
 const refreshSchema = z.object({ refreshToken: z.string().optional() });
 
-function userDto(user: {
+export function userDto(user: {
   id: string;
   email: string;
   name: string;
@@ -66,7 +66,7 @@ function userDto(user: {
   };
 }
 
-const userSelect = {
+export const userSelect = {
   id: true,
   email: true,
   name: true,
@@ -77,7 +77,7 @@ const userSelect = {
   },
 } as const;
 
-async function issueSession(
+export async function issueSession(
   userId: string,
   meta: { userAgent?: string; ip?: string },
   res: Parameters<typeof setAuthCookies>[0],
@@ -139,8 +139,21 @@ authRouter.post(
     const { email, password } = req.body as z.infer<typeof loginSchema>;
     const user = await prisma.user.findUnique({ where: { email }, select: { ...userSelect, passwordHash: true, deletedAt: true } });
     // Constant-ish work either way to avoid user enumeration timing.
-    const ok = user ? await verifyPassword(password, user.passwordHash) : await verifyPassword(password, '$2a$12$invalidinvalidinvalidinvalidinvalidinvalidinvalidinvalidin');
-    if (!user || !ok || user.deletedAt) throw ApiError.unauthorized('Incorrect email or password');
+    // `passwordHash` is null for Google-only accounts: they have no local
+    // password, so a password login can never succeed for them — but it is
+    // still compared against a dummy hash so timing reveals nothing.
+    const hash = user?.passwordHash ?? '$2a$12$invalidinvalidinvalidinvalidinvalidinvalidinvalidinvalidin';
+    const ok = await verifyPassword(password, hash);
+    if (!user || !user.passwordHash || !ok || user.deletedAt) {
+      if (user && !user.passwordHash) {
+        throw new ApiError(
+          409,
+          'This account uses Google sign-in. Continue with Google instead.',
+          'use_google_signin',
+        );
+      }
+      throw ApiError.unauthorized('Incorrect email or password');
+    }
 
     await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
     const tokens = await issueSession(user.id, { userAgent: req.headers['user-agent'], ip: req.ip }, res);

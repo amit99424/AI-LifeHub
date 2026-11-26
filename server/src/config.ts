@@ -56,6 +56,28 @@ const EnvSchema = z.object({
   COOKIE_SECURE: bool(false),
   COOKIE_DOMAIN: z.string().optional(),
 
+  // ── Google OAuth 2.0 ──────────────────────────────────────────
+  // Client ID is public (it appears in the consent-screen URL). The secret is
+  // server-only and must never reach the frontend bundle.
+  GOOGLE_CLIENT_ID: z.string().optional().default(''),
+  GOOGLE_CLIENT_SECRET: z.string().optional().default(''),
+  // Must exactly match an "Authorized redirect URI" in Google Cloud Console.
+  // The backend handles the callback and then redirects the browser onward.
+  GOOGLE_REDIRECT_URI: z.string().optional().default(''),
+  // Where the backend sends the browser after a successful/failed sign-in.
+  GOOGLE_SUCCESS_REDIRECT: z.string().optional().default(''),
+  GOOGLE_FAILURE_REDIRECT: z.string().optional().default(''),
+  GOOGLE_ALLOWED_DOMAINS: z
+    .string()
+    .optional()
+    .transform((v) =>
+      (v ?? '')
+        .split(',')
+        .map((x) => x.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  GOOGLE_AUTO_LINK: bool(true),
+
   AI_PROVIDER: z.enum(['gemini', 'openai', 'none']).default('none'),
   GEMINI_API_KEY: z.string().optional().default(''),
   GEMINI_MODEL: z.string().default('gemini-2.5-flash'),
@@ -94,6 +116,10 @@ export type AppConfig = z.infer<typeof EnvSchema> & {
   aiConfigured: boolean;
   aiKey: string;
   aiModel: string;
+  googleConfigured: boolean;
+  /** Where the browser lands after the callback: defaults to APP_URL. */
+  googleSuccessRedirect: string;
+  googleFailureRedirect: string;
 };
 
 function load(): AppConfig {
@@ -146,16 +172,35 @@ function load(): AppConfig {
     }
   }
 
+  const googleConfigured = Boolean(e.GOOGLE_CLIENT_ID && e.GOOGLE_CLIENT_SECRET && e.GOOGLE_REDIRECT_URI);
+  const appUrl = e.APP_URL.replace(/\/$/, '');
+  const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//.test(e.GOOGLE_REDIRECT_URI);
+  if (!isTest && googleConfigured && !/^https:\/\//.test(e.GOOGLE_REDIRECT_URI) && !isLocalhost) {
+    // Google requires https for every redirect URI except localhost (which it
+    // allows over http for development).
+    // eslint-disable-next-line no-console
+    console.error('[config] GOOGLE_REDIRECT_URI must be an https:// URL (http is allowed only for localhost).');
+    process.exit(1);
+  }
+
   return {
     ...e,
     isProd: e.NODE_ENV === 'production',
     aiConfigured,
     aiKey,
     aiModel,
+    googleConfigured,
+    googleSuccessRedirect: e.GOOGLE_SUCCESS_REDIRECT || `${appUrl}/auth/google/callback`,
+    googleFailureRedirect: e.GOOGLE_FAILURE_REDIRECT || `${appUrl}/auth/google/callback`,
   };
 }
 
 let cached: AppConfig | null = null;
+
+/** Test-only: forget the cached configuration so a changed env is re-read. */
+export function __resetConfigCache() {
+  cached = null;
+}
 
 /** Evaluated on first use so tests can set NODE_ENV before anything is read. */
 export function getConfig(): AppConfig {

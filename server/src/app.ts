@@ -9,6 +9,7 @@ import { config } from './config.js';
 import { errorHandler, notFoundHandler } from './lib/http.js';
 import { apiLimiter } from './middleware/rateLimit.js';
 import { authRouter } from './routes/auth.js';
+import { googleAuthRouter } from './routes/googleAuth.js';
 import { usersRouter } from './routes/users.js';
 import { tasksRouter } from './routes/tasks.js';
 import { habitsRouter } from './routes/habits.js';
@@ -136,6 +137,7 @@ export function createApp() {
       dbError = (err as Error).message?.slice(0, 200);
     }
     const ai = aiStatus();
+    const google = { configured: config.googleConfigured };
     const ready = db === 'up';
     res.status(ready ? 200 : 503).json({
       ok: ready,
@@ -149,11 +151,14 @@ export function createApp() {
       db,
       ...(dbError ? { dbError } : {}),
       ai: { configured: ai.configured, provider: ai.provider, model: ai.model },
+      google,
     });
   });
 
   app.use('/api', apiLimiter);
   app.use('/api/auth', authRouter);
+  // Google OAuth 2.0 (start / callback / link / status).
+  app.use('/api/auth', googleAuthRouter);
   app.use('/api/users', usersRouter);
   app.use('/api/tasks', tasksRouter);
   app.use('/api/habits', habitsRouter);
