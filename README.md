@@ -472,6 +472,16 @@ backend, which knows both. Vercel keeps only:
 If `VITE_API_URL` is missing the SPA will call its own origin and the button
 will report that Google sign-in is not configured.
 
+### Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `invalid_client: The OAuth client was not found` | The Client ID stored on Render has a trailing newline or space, or belongs to a deleted client | Re-paste it without a trailing line break (the API trims it since v1.0.1, but a re-paste is cleanest) and redeploy |
+| `Error 400: redirect_uri_mismatch` | `GOOGLE_REDIRECT_URI` is not byte-identical to an Authorized redirect URI | Compare it with `GET /api/auth/google/redirect-uri` |
+| Button does not appear | The backend reports `configured: false` | Check `/api/auth/google/status`; all three of Client ID, Secret and Redirect URI must be set |
+| `google_bad_state` | The sign-in was started in another browser/tab, or took over 10 minutes | Start again from the login page |
+| `google_email_unverified` | Google did not report the email as verified | Verify the address with Google first |
+
 ### 4. Verify
 
 ```bash
