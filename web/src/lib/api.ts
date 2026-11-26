@@ -2,21 +2,34 @@
  * Typed API client.
  * - Sends httpOnly cookies (`credentials: include`) and a Bearer token.
  * - Transparently refreshes the access token once on a 401, then retries.
- * - Uses `VITE_API_URL` when the API lives on a different origin (Vercel +
- *   Render), and relative `/api/...` paths when it does not (dev proxy or a
- *   single-origin deployment).
+ *
+ * Where the API lives is decided by one thing: whether we are in production.
+ *
+ *   production  → same origin, path `/api/...`. Vercel rewrites `/api/*` to the
+ *                 Render service (web/vercel.json). This is deliberate: a cookie
+ *                 is only a real cookie for the app when the request is
+ *                 same-origin. Cross-site cookies are blocked or partitioned by
+ *                 Safari and by every in-app browser (WhatsApp, Instagram,
+ *                 Facebook), which made Google sign-in impossible on iPhone.
+ *                 Same-origin also survives Safari ITP and third-party cookie
+ *                 phase-out, and needs no SameSite=None at all.
+ *   development → `VITE_API_URL` if set (the Vite dev server), else relative.
  */
 
 const RAW_BASE = (import.meta.env.VITE_API_URL as string | undefined)?.trim() ?? '';
 
-/** Absolute API origin, or '' for same-origin requests. */
-export const API_BASE = RAW_BASE.replace(/\/+$/, '').replace(/\/api$/, '');
+/**
+ * In production the API is always same-origin: `/api/*` is proxied by the
+ * hosting platform to the backend. `VITE_API_URL` is deliberately ignored there,
+ * so a stale value can never silently reintroduce cross-site cookies.
+ */
+export const API_BASE = import.meta.env.PROD ? '' : RAW_BASE.replace(/\/+$/, '').replace(/\/api$/, '');
 
-if (import.meta.env.PROD && API_BASE && !/^https?:\/\//i.test(API_BASE)) {
-  // Fails loudly at runtime instead of producing mysterious network errors.
-  console.error(`[api] VITE_API_URL must be an absolute URL (got "${API_BASE}"). Falling back to same-origin.`);
+if (import.meta.env.DEV && RAW_BASE && !/^https?:\/\//i.test(RAW_BASE)) {
+  console.error(`[api] VITE_API_URL must be an absolute URL (got "${RAW_BASE}"). Falling back to same-origin.`);
 }
 
+/** Used only when no explicit base was given: same origin in both modes. */
 const BASE = /^https?:\/\//i.test(API_BASE) ? API_BASE : '';
 
 export class ApiError extends Error {
@@ -142,7 +155,10 @@ export function isTransientError(err: unknown): boolean {
 
 function networkError(path: string): ApiError {
   const target = BASE || window.location.origin;
-  const isColdStart = /onrender\.com/i.test(target);
+  // Behind the same-origin proxy the Render host is invisible from the browser,
+  // so the cold-start hint cannot rely on the URL: in production every network
+  // failure may be the free-tier instance booting.
+  const isColdStart = /onrender\.com/i.test(target) || (BASE === '' && import.meta.env.PROD);
   return new ApiError(
     0,
     isColdStart

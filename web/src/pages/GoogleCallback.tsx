@@ -59,7 +59,9 @@ function describe(probe: AuthProbe): string {
     return 'The AI-LifeHub API could not be reached from this browser. Check your connection and try again.';
   }
   if (probe.cookieMissing) {
-    return 'Your Google account was verified, but this browser blocked the sign-in cookies. This usually happens when cookies are disabled, when the site is opened in a private tab or an in-app browser, or when the page is opened from a link that is not the app’s own domain.';
+    // The API is called same-origin through the host's proxy, so a third-party
+    // cookie block is no longer a plausible cause: the cookie is the site's own.
+    return 'Your Google account was verified, but the sign-in cookie did not reach the app. Check that cookies are allowed for this site (Safari → Settings → Safari → Block All Cookies, or the “Prevent cross-site tracking” toggle), then try again.';
   }
   return `Your Google account was verified, but the server refused the session (HTTP ${probe.status ?? '—'}${
     probe.code ? `, ${probe.code}` : ''

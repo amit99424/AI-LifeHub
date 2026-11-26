@@ -112,42 +112,61 @@ export function userToday(req: Request): string {
 /**
  * Which SameSite policy the auth cookies get.
  *
- * A cross-site deployment (SPA on vercel.app, API on onrender.com) needs
- * `None` on every later fetch: the browser withholds Lax cookies from a
- * cross-site request, so `/api/auth/me` answers 401 and the SPA shows
- * "session_failed" even though the session exists. That is the iPhone bug.
+ * The app is served from the same origin as the API it calls: the host proxies
+ * `/api/*` to the backend (see web/vercel.json). That is not a style choice —
+ * a cookie is only a first-party cookie for the app when the request is
+ * same-origin, and Safari (plus every in-app browser: WhatsApp, Instagram,
+ * Facebook) blocks or partitions cross-site cookies. Cross-site cookies were
+ * what made Google sign-in fail on iPhone no matter which attribute was used.
  *
- * The cookie must ALSO survive the OAuth callback itself, which is a top-level
- * navigation to the API. None is sent on top-level cross-site navigations too,
- * so it satisfies both; the only risk is a browser refusing None, which it only
- * does when the cookie is not Secure.
- *
- * `auto` therefore means: None when the deployment is cross-site (https, no
- * shared parent domain), Lax when it is same-site or local http. Set
- * AUTH_COOKIE_SAMESITE explicitly to override either way.
+ * So the default is `Lax`, the strictest policy that still works for the OAuth
+ * callback (a top-level navigation, which Lax permits). `None` is only issued
+ * when an operator explicitly asks for it on a genuinely cross-site deployment.
  */
-function sameSiteFor(_req: AuthRequest): 'lax' | 'none' | 'strict' {
-  if (!config.COOKIE_SECURE) return 'lax'; // local http development
-  if (config.COOKIE_DOMAIN) return 'lax'; // cookies shared across subdomains
-
+function sameSiteFor(_req?: AuthRequest): 'lax' | 'none' | 'strict' {
   const override = config.AUTH_COOKIE_SAMESITE;
-  if (override === 'none') return 'none';
+  if (override === 'none') {
+    // Browsers silently discard SameSite=None without Secure; never emit it.
+    return config.COOKIE_SECURE ? 'none' : 'lax';
+  }
   if (override === 'lax') return 'lax';
 
-  // auto: cross-site deployment → None (required for cross-site fetches).
-  return config.CORS_ORIGINS.some((o) => {
+  // auto: same-origin is the norm, so Lax. A cross-site deployment (API on its
+  // own domain, no proxy) still needs None for the app's fetches to carry it.
+  if (!config.COOKIE_SECURE || config.COOKIE_DOMAIN) return 'lax';
+  return isCrossSiteDeployment() ? 'none' : 'lax';
+}
+
+/**
+ * True only when the app is demonstrably served from a different site than the
+ * API. Silence is treated as same-origin: with no CORS origins configured (the
+ * proxied deployment allows none), or an unparsable one, the safe assumption is
+ * that the browser talks to a single origin.
+ */
+function isCrossSiteDeployment(): boolean {
+  const hosts = config.CORS_ORIGINS.map((o) => {
     try {
-      return new URL(o).host !== new URL(config.APP_URL).host;
+      return new URL(o).host;
     } catch {
-      return false;
+      return '';
     }
-  })
-    ? 'none'
-    : 'lax';
+  }).filter(Boolean);
+  if (hosts.length === 0) return false;
+
+  const apiHost = (() => {
+    try {
+      return new URL(config.GOOGLE_REDIRECT_URI).host;
+    } catch {
+      return '';
+    }
+  })();
+  if (!apiHost) return false; // unknown API origin → assume the proxy
+
+  return hosts.some((h) => h !== apiHost);
 }
 
 export function setAuthCookies(res: Response, accessToken: string, refreshToken: string, req?: AuthRequest) {
-  const sameSite = sameSiteFor(req as AuthRequest);
+  const sameSite = sameSiteFor(req);
   const base = {
     httpOnly: true,
     sameSite,
@@ -160,7 +179,7 @@ export function setAuthCookies(res: Response, accessToken: string, refreshToken:
 }
 
 export function clearAuthCookies(res: Response, req?: AuthRequest) {
-  const sameSite = sameSiteFor(req as AuthRequest);
+  const sameSite = sameSiteFor(req);
   const base = {
     httpOnly: true,
     sameSite,

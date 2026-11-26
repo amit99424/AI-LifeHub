@@ -54,8 +54,8 @@ services:
         sync: false
       - key: VERCEL_PROJECT_URL
         sync: false
-      # auto = SameSite=None on a cross-site deployment (Vercel SPA + Render API),
-      # Lax on a same-site one. Force lax|none only to diagnose a cookie problem.
+      # auto = SameSite=Lax, which is right because the app proxies /api/* on its
+      # own origin. Force none only for a deployment with no proxy (cross-site).
       - key: AUTH_COOKIE_SAMESITE
         value: auto
       - key: COOKIE_SECURE

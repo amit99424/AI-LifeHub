@@ -6,11 +6,28 @@
   "installCommand": "npm install",
   "rewrites": [
     {
-      "source": "/((?!assets/|favicon.svg).*)",
+      "source": "/api/:path*",
+      "destination": "https://ai-lifehub-api.onrender.com/api/:path*"
+    },
+    {
+      "source": "/((?!assets/|favicon.svg|api/).*)",
       "destination": "/index.html"
     }
   ],
   "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store, no-cache, must-revalidate"
+        },
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        }
+      ]
+    },
     {
       "source": "/assets/(.*)",
       "headers": [

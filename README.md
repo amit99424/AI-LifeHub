@@ -397,38 +397,59 @@ returning sign-in opens their existing account.
 | Disconnecting Google | Refused while Google is the only way in (`AUTH_UI_MODE=google_only`) — `400 google_required`. Nobody can lock themselves out. |
 | `/forgot-password`, `/reset-password` | Kept as routes, redirecting to `/login`, so old bookmarks and emailed links do not 404. The backend endpoints still exist for API clients. |
 
-### Cookies on a cross-site deployment (why mobile failed)
+### Same-origin API proxy (why Google sign-in failed on iPhone)
 
-The SPA runs on `vercel.app` and the API on `onrender.com`. Those are different
-registrable domains, so every XHR the app makes is **cross-site**. Browsers
-withhold `SameSite=Lax` cookies from cross-site requests — Chrome, and Safari on
-iOS especially.
+The app is served from the API's own origin. `web/vercel.json` proxies `/api/*`
+to the backend:
 
-That produced a very specific bug on iPhone: the Google sign-in *succeeded*
-server-side (user created, `Session` and `RefreshToken` rows written, cookies in
-the callback response), then the landing page called `/api/auth/me`, the browser
-sent **no cookie**, the API answered `401`, and the app showed
-`Could not sign you in with Google — session_failed`.
+```json
+{ "source": "/api/:path*", "destination": "https://ai-lifehub-api.onrender.com/api/:path*" }
+```
 
-`sameSiteFor()` in `server/src/middleware/auth.ts` now derives the policy from
-the deployment instead of assuming `Lax`:
+That is not a preference. A cookie is only a *first-party* cookie for the app
+when the request is same-origin. Served from `vercel.app` with the API on
+`onrender.com`, every request was cross-site, and Safari — plus every in-app
+browser (WhatsApp, Instagram, Facebook), which are WebKit views with their own
+cookie policy — blocks or partitions cross-site cookies. Google sign-in then
+failed in a very specific way: the server created the user, the session and the
+refresh token, returned the cookies, and the landing page's `/api/auth/me` still
+arrived with no cookie, answered `401`, and the app showed `session_failed`.
 
-| `AUTH_COOKIE_SAMESITE` | When the API cookies get `SameSite=` |
-|---|---|
-| `auto` (default) | `None` when `CORS_ORIGINS` lists a host other than `APP_URL`'s (cross-site); `Lax` otherwise |
-| `none` | Always `None` — force this if a host looks same-site but is not |
-| `lax` | Always `Lax` — same-site deployments, or to reproduce the bug |
+Adjusting `SameSite` could never fix that, because the request itself was
+third-party. The proxy removes the cross-site request, so:
 
-`None` is only ever emitted together with `Secure`, because a browser silently
-discards an insecure `None` cookie. Local http development keeps `Lax`.
+- cookies are first-party (`SameSite=Lax`, `Secure`, `HttpOnly`),
+- Safari's third-party cookie restrictions and ITP never apply,
+- the Google callback returns to the app's own origin, so the state cookie set
+  by `/start` is sent back and PKCE/state validation passes.
 
-`server/tests/oauth-e2e.mjs` models this with a real browser cookie jar
-(`browserJar`): it drops insecure `None` cookies, withholds `Lax` cookies from
-cross-site requests, and runs the whole chain — `/start` → callback → `/me` →
-`/refresh`. Forcing `AUTH_COOKIE_SAMESITE=lax` makes three of those checks fail
-with `sent: none`, which is the iPhone symptom; the default makes all 41 pass.
+`web/src/lib/api.ts` therefore uses relative `/api/...` paths in production and
+**ignores `VITE_API_URL` there**, so a stale build-time value cannot silently
+put the app back on the cross-site path.
 
-### `AUTH_UI_MODE`
+Deployment checklist for this architecture:
+
+| Where | Setting | Value |
+|---|---|---|
+| Vercel | Root Directory | `web` |
+| Vercel | `VITE_API_URL` | **unset** (the proxy makes it unnecessary) |
+| Render | `GOOGLE_REDIRECT_URI` | `https://ai-life-hub-iixf.vercel.app/api/auth/google/callback` |
+| Render | `GOOGLE_SUCCESS_REDIRECT` | `https://ai-life-hub-iixf.vercel.app/auth/google/callback` |
+| Render | `GOOGLE_FAILURE_REDIRECT` | `https://ai-life-hub-iixf.vercel.app/auth/google/callback` |
+| Render | `CORS_ORIGINS` | `https://ai-life-hub-iixf.vercel.app` (same origin — no preflight) |
+| Render | `AUTH_COOKIE_SAMESITE` | `auto` (= `Lax`) |
+| Google Cloud | Authorized redirect URI | `https://ai-life-hub-iixf.vercel.app/api/auth/google/callback` |
+
+The Google redirect URI **must** move to the Vercel domain, because that is now
+the origin the browser reaches. It is served by the proxy, which forwards to
+Render, so Render receives the callback while the browser stays on the app's
+domain.
+
+`server/tests/oauth-e2e.mjs` models this deployment: same origin, `Lax` +
+`Secure` + `HttpOnly` cookies, the full `/start` → callback → `/me` → `/refresh`
+chain, and the state cookie coming back. 47 checks.
+
+### `AUTH_UI_MODE`### `AUTH_UI_MODE`
 
 | Value | Sign-in UI | API |
 |---|---|---|

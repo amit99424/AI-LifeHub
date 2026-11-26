@@ -24,20 +24,26 @@ const fake = await startFakeGoogle(FAKE, (c) => {
 process.env.GOOGLE_CLIENT_ID = '123456-test.apps.googleusercontent.com';
 process.env.GOOGLE_CLIENT_SECRET = 'GOCSPX-testsecret';
 process.env.GOOGLE_REDIRECT_URI = 'http://localhost:4900/api/auth/google/callback';
-// Cookie assertions below describe the live deployment: https on Render with the
-// SPA on vercel.app, i.e. COOKIE_SECURE=true and no shared parent domain. Set it
-// explicitly so the test proves production behaviour instead of the local one.
+// Production cookie shape: https, no shared parent domain. Set explicitly so the
+// suite proves production behaviour instead of whatever the local .env says.
 process.env.COOKIE_SECURE = 'true';
 process.env.COOKIE_DOMAIN = '';
-// Respect an operator override (AUTH_COOKIE_SAMESITE=lax|none) so this suite can
+// Respect an operator override (AUTH_COOKIE_SAMESITE=none|lax) so this suite can
 // also prove that a wrong policy FAILS, but never inherit a stray value.
 if (!process.env.AUTH_COOKIE_SAMESITE) process.env.AUTH_COOKIE_SAMESITE = 'auto';
 const COOKIE_MODE = process.env.AUTH_COOKIE_SAMESITE;
-// The deployment this suite models: SPA and API on different registrable domains.
+
+/**
+ * The deployment this suite models, and the one the app is designed around:
+ * SPA and API on ONE origin. The host proxies `/api/*` to the backend, so the
+ * browser only ever talks to the app's own domain and every cookie is
+ * first-party. That is what makes Safari and in-app browsers (WhatsApp,
+ * Instagram) work, which cross-site cookies never did.
+ */
 process.env.APP_URL ||= 'https://ai-life-hub-iixf.vercel.app';
-if (!/vercel\.app/i.test(process.env.CORS_ORIGINS ?? '')) {
-  process.env.CORS_ORIGINS = [process.env.CORS_ORIGINS, 'https://ai-life-hub-iixf.vercel.app'].filter(Boolean).join(',');
-}
+process.env.CORS_ORIGINS = process.env.APP_URL;
+// The callback returns to the app's own origin, because the app proxies /api/*.
+process.env.GOOGLE_REDIRECT_URI = `${process.env.APP_URL}/api/auth/google/callback`;
 
 const { createApp } = await import('../dist/app.js');
 const googleSvc = await import('../dist/services/google.js');
@@ -122,7 +128,7 @@ function browserJar(baseUrl) {
     headerCrossSite(path = '/') {
       return jar
         .filter((c) => path.startsWith(c.path || '/'))
-        .filter((c) => String(c.samesite).toLowerCase() === 'none')
+        .filter((c) => ['none', 'lax'].includes(String(c.samesite).toLowerCase()))
         .map((c) => `${c.name}=${c.value}`)
         .join('; ');
     },
@@ -406,14 +412,14 @@ function browserJar(baseUrl) {
   //    fetch, so the SPA sees 401 and shows "session_failed".
   const crossSiteCookie = jar.headerCrossSite('/api/auth/me');
   const me = await req('/api/auth/me', {
-    headers: { Cookie: crossSiteCookie, Origin: 'https://ai-life-hub-iixf.vercel.app', 'Sec-Fetch-Site': 'cross-site' },
+    headers: { Cookie: crossSiteCookie, Origin: 'https://ai-life-hub-iixf.vercel.app', 'Sec-Fetch-Site': 'same-origin' },
   });
   check(
-    'browser chain: the session cookie is actually sent cross-site (Safari/Chrome rule)',
+    'browser chain: the session cookie is sent on the app\'s own origin (no third-party cookie)',
     crossSiteCookie.split('; ').some((c) => c.startsWith('lh_at=')),
     `sent: ${crossSiteCookie || 'none'} | jar: ${jar.list().join(' ')}`,
   );
-  check('browser chain: /api/auth/me succeeds with what the browser sends cross-site', me.status === 200);
+  check('browser chain: /api/auth/me succeeds same-origin', me.status === 200);
 
   // 4. And the refresh path too, which is the one that fails after 15 minutes.
   const refreshed = await req('/api/auth/refresh', {
@@ -422,11 +428,40 @@ function browserJar(baseUrl) {
       Cookie: jar.headerCrossSite('/api/auth/refresh'),
       'Content-Type': 'application/json',
       Origin: 'https://ai-life-hub-iixf.vercel.app',
-      'Sec-Fetch-Site': 'cross-site',
+      'Sec-Fetch-Site': 'same-origin',
     },
     body: JSON.stringify({}),
   });
-  check('browser chain: /api/auth/refresh works cross-site', refreshed.status === 200);
+  check('browser chain: /api/auth/refresh works same-origin', refreshed.status === 200);
+}
+
+// ── 11. Same-origin proxy deployment: the cookie shape Safari accepts ──────
+// The app is served from the API's own origin (host proxies /api/*), so the
+// session cookies are first-party. They must be Lax + Secure: Lax because the
+// OAuth callback is a top-level navigation, Secure because the deployment is
+// https. None would mean the cross-site model leaked back in.
+{
+  const cfgMod = await import('../dist/config.js');
+  const savedMode2 = process.env.AUTH_COOKIE_SAMESITE;
+  process.env.AUTH_COOKIE_SAMESITE = 'auto';
+  cfgMod.__resetConfigCache();
+  const { setAuthCookies: setC } = await import('../dist/middleware/auth.js');
+  const res9 = { headers: {}, cookie(name, value, opts) { this.headers[name] = opts; } };
+  // Force the mode for this block: the outer env may have been set to prove a
+  // failure elsewhere, and this check is about the shipped default.
+  process.env.AUTH_COOKIE_SAMESITE = 'auto';
+  cfgMod.__resetConfigCache();
+  setC(res9, 'a', 'r', { cookies: {} });
+  const at = res9.headers.lh_at ?? {};
+  check('same-origin: access cookie is SameSite=Lax', String(at.sameSite).toLowerCase() === 'lax', String(at.sameSite));
+  check('same-origin: access cookie is Secure', at.secure === true);
+  check('same-origin: access cookie is httpOnly', at.httpOnly === true);
+  check('same-origin: access cookie path is /', at.path === '/');
+  const rt9 = res9.headers.lh_rt ?? {};
+  check('same-origin: refresh cookie path is /api/auth', rt9.path === '/api/auth');
+  check('same-origin: refresh cookie is SameSite=Lax + Secure', String(rt9.sameSite).toLowerCase() === 'lax' && rt9.secure === true);
+  process.env.AUTH_COOKIE_SAMESITE = savedMode2 ?? COOKIE_MODE;
+  cfgMod.__resetConfigCache();
 }
 
 const failed = results.filter((r) => !r.ok);

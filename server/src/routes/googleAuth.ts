@@ -16,6 +16,7 @@
  */
 
 import { Router } from 'express';
+import type { Request } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { ApiError, ah } from '../lib/http.js';
 import { requireAuth } from '../middleware/auth.js';
@@ -68,6 +69,34 @@ function appendQuery(url: string, params: Record<string, string>): string {
   return u.toString();
 }
 
+/**
+ * Log the one misconfiguration that silently breaks sign-in: the SPA calls this
+ * endpoint on the API's own host, so the state cookie is scoped to the API, but
+ * the callback returns the browser to the SPA's domain. The cookie is then never
+ * sent, state validation fails, and the user lands on the failure page without a
+ * useful reason. Reaching /start same-origin (through the host's /api proxy) is
+ * what makes the cookie and the callback agree.
+ */
+function warnIfCrossSiteStart(req: Request): void {
+  const entryOrigin = req.get('origin') ?? (req.get('referer') ? safeOrigin(req.get('referer')!) : '');
+  const callbackOrigin = safeOrigin(config.GOOGLE_REDIRECT_URI);
+  if (entryOrigin && callbackOrigin && entryOrigin !== callbackOrigin) {
+    console.warn(
+      `[oauth] /start reached from ${entryOrigin} but the callback returns to ${callbackOrigin}; ` +
+        'the state cookie will not be sent back. Call this endpoint through the app\'s own /api proxy.',
+    );
+  }
+}
+
+/** Origin (`scheme://host`) of an absolute URL, or '' when it is not one. */
+function safeOrigin(url: string): string {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return '';
+  }
+}
+
 function isSafeRelative(p: string | undefined): p is string {
   return typeof p === 'string' && p.startsWith('/') && !p.startsWith('//');
 }
@@ -100,6 +129,7 @@ googleAuthRouter.get(
 
     // Double-submit CSRF token: the browser must send the same state back, and
     // it is only readable by this server (httpOnly).
+    warnIfCrossSiteStart(req);
     res.cookie(OAUTH_STATE_COOKIE, `${state}.${verifier}`, stateCookieOptions());
 
     const loginHint = typeof req.query.email === 'string' ? req.query.email : undefined;
