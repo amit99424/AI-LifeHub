@@ -18,10 +18,10 @@
   }
 
   .dark {
-    --bg: 14 17 23;
-    --surface: 22 26 34;
-    --border: 40 46 58;
-    --muted: 148 160 178;
+    --bg: 11 16 32;
+    --surface: 18 24 44;
+    --border: 38 46 74;
+    --muted: 152 164 190;
   }
 
   * {
@@ -124,15 +124,14 @@
     @apply bg-brand-600 text-white shadow-sm hover:bg-brand-600 hover:text-white dark:bg-brand-600 dark:text-white dark:hover:bg-brand-600;
   }
 
+  /* A single-hue wash used only for the product name. */
   .gradient-text {
-    @apply bg-gradient-to-r from-brand-600 via-violet-500 to-blue-500 bg-clip-text text-transparent;
+    @apply bg-gradient-to-r from-brand-600 to-brand-400 bg-clip-text text-transparent;
   }
 
+  /* One soft accent wash from the top-left, like a page catching light. */
   .mesh-bg {
-    background-image:
-      radial-gradient(at 20% 0%, rgba(127, 86, 255, 0.18) 0px, transparent 50%),
-      radial-gradient(at 80% 10%, rgba(59, 130, 246, 0.14) 0px, transparent 45%),
-      radial-gradient(at 50% 100%, rgba(168, 85, 247, 0.12) 0px, transparent 50%);
+    background-image: radial-gradient(at 8% 0%, rgba(168, 85, 247, 0.10) 0px, transparent 44%);
   }
 }
 

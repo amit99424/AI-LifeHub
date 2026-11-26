@@ -23,6 +23,7 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import { useAuth, useTheme } from '@/lib/auth';
 import { cn, initials, formatDate } from '@/lib/utils';
+import { Logo as Logo_ } from '@/components/Logo';
 import { api } from '@/lib/api';
 
 const NAV = [
@@ -44,19 +45,7 @@ const ACCOUNT = [
 
 function Logo({ collapsed }: { collapsed?: boolean }) {
   return (
-    <div className="flex items-center gap-2.5">
-      <div className="relative flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-500 to-blue-500 shadow-glow">
-        <Sparkles className="h-4.5 w-4.5 text-white" />
-      </div>
-      {!collapsed && (
-        <div className="leading-tight">
-          <p className="font-display text-[15px] font-extrabold tracking-tight text-ink-900 dark:text-white">
-            AI-Life<span className="gradient-text">Hub</span>
-          </p>
-          <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-ink-400">Productivity OS</p>
-        </div>
-      )}
-    </div>
+    <Logo_ size={36} showWordmark={!collapsed} subtitle="Productivity OS" />
   );
 }
 
@@ -117,7 +106,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         ))}
       </nav>
 
-      <div className="mx-3 mb-3 rounded-2xl border border-[rgb(var(--border))] bg-gradient-to-br from-brand-50 to-blue-50 p-3.5 dark:from-brand-500/10 dark:to-blue-500/5">
+      <div className="mx-3 mb-3 rounded-2xl border border-[rgb(var(--border))] bg-brand-50 p-3.5 dark:bg-brand-500/10">
         <div className="flex items-center gap-2">
           <Sparkles className="h-4 w-4 text-brand-600 dark:text-brand-300" />
           <p className="text-xs font-bold text-ink-900 dark:text-white">Low-effort tracking</p>
@@ -133,7 +122,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             onClick={() => setMenuOpen((v) => !v)}
             className="flex w-full items-center gap-2.5 rounded-xl p-2 text-left transition hover:bg-ink-100 dark:hover:bg-ink-800"
           >
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand-500 to-blue-500 text-[11px] font-bold text-white">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-600 text-[11px] font-bold text-white">
               {initials(user?.name ?? 'U')}
             </div>
             <div className="min-w-0 flex-1">

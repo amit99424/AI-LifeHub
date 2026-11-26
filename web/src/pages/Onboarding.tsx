@@ -114,7 +114,7 @@ export default function Onboarding() {
       <div className="mx-auto flex min-h-screen max-w-3xl flex-col px-5 py-8 sm:px-8">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-500 to-blue-500 shadow-glow">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-600 shadow-glow">
               <Sparkles className="h-4.5 w-4.5 text-white" />
             </div>
             <span className="font-display text-base font-extrabold tracking-tight text-ink-900 dark:text-white">

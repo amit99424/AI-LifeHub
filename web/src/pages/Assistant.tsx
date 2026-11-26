@@ -196,7 +196,7 @@ export default function Assistant() {
 
         <Card className="flex min-h-[70vh] flex-col p-0">
           <div className="flex items-center gap-2.5 border-b border-[rgb(var(--border))] px-4 py-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-brand-500 to-blue-500 text-white">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-600 text-white">
               <Bot className="h-4 w-4" />
             </div>
             <div className="flex-1">
@@ -222,7 +222,7 @@ export default function Assistant() {
           <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto px-4 py-5">
             {messages.length === 0 ? (
               <div className="flex h-full flex-col items-center justify-center py-8">
-                <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-500 to-blue-500 text-white shadow-glow">
+                <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-600 text-white shadow-glow">
                   <Sparkles className="h-7 w-7" />
                 </div>
                 <h3 className="font-display text-base font-extrabold text-ink-900 dark:text-white">Ask about your own data</h3>
@@ -245,7 +245,7 @@ export default function Assistant() {
               messages.map((m) => (
                 <div key={m.id} className={cn('flex gap-2.5', m.role === 'user' ? 'justify-end' : 'justify-start')}>
                   {m.role === 'assistant' && (
-                    <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-brand-500 to-blue-500 text-white">
+                    <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-brand-600 text-white">
                       <Bot className="h-3.5 w-3.5" />
                     </div>
                   )}
@@ -276,7 +276,7 @@ export default function Assistant() {
 
             {sending && (
               <div className="flex gap-2.5">
-                <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-brand-500 to-blue-500 text-white">
+                <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-brand-600 text-white">
                   <Bot className="h-3.5 w-3.5" />
                 </div>
                 <div className="flex items-center gap-1.5 rounded-2xl rounded-bl-md border border-[rgb(var(--border))] px-3.5 py-3">

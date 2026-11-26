@@ -16,7 +16,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { AlertTriangle, ArrowLeft, Loader2, RotateCcw, Sparkles } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Loader2, RotateCcw } from 'lucide-react';
+import { LogoMark } from '@/components/Logo';
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import { probeSession, type AuthProbe } from '@/lib/api';
@@ -177,8 +178,8 @@ export default function GoogleCallback() {
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-4 px-5">
-      <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-brand-500 to-blue-500 shadow-lg">
-        <Sparkles className="h-6 w-6 text-white" />
+      <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-brand-600 shadow-lg">
+        <LogoMark size={26} gradient />
       </div>
       <div className="flex items-center gap-2 text-sm font-semibold text-ink-700 dark:text-ink-200">
         <Loader2 className="h-4 w-4 animate-spin" />

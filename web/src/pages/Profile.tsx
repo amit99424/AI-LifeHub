@@ -43,7 +43,7 @@ export default function Profile() {
       <Card className="relative overflow-hidden">
         <div className="mesh-bg pointer-events-none absolute inset-0 opacity-70" />
         <div className="relative flex flex-col items-start gap-4 sm:flex-row sm:items-center">
-          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-500 to-blue-500 text-xl font-extrabold text-white shadow-glow">
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-600 text-xl font-extrabold text-white shadow-glow">
             {initials(user?.name ?? 'U')}
           </div>
           <div className="flex-1">

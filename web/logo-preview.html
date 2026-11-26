@@ -1,0 +1,35 @@
+<!doctype html><meta charset="utf-8"><title>AI-LifeHub — mark + lockup</title>
+<style>
+ body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,sans-serif;background:#070A18;color:#fff}
+ .wrap{padding:28px;display:flex;flex-direction:column;gap:26px}
+ .lbl{font-size:10px;letter-spacing:.14em;text-transform:uppercase;opacity:.5}
+ .row{display:flex;align-items:flex-end;gap:20px}
+ .tile{display:inline-flex;align-items:center;justify-content:center;border-radius:10px;background:#0B1020;box-shadow:0 0 18px -4px rgba(124,58,237,.65);outline:1px solid rgba(96,165,250,.4);outline-offset:-1px}
+ .cap{font-size:10px;opacity:.45;margin-top:6px;text-align:center}
+ .col{display:flex;flex-direction:column;align-items:center}
+ .lock{display:flex;align-items:center;gap:10px}
+ .w{font-weight:800;letter-spacing:-.02em}
+ .grad{background:linear-gradient(90deg,#c084fc,#38bdf8);-webkit-background-clip:text;background-clip:text;color:transparent}
+ .sub{font-size:10px;letter-spacing:.14em;text-transform:uppercase;opacity:.55}
+ .light{background:#f8fafc;color:#0f172a;border-radius:14px;padding:20px}
+</style>
+<div class="wrap">
+  <div class="lbl">Navbar lockup (36px tile, 15px wordmark)</div>
+  <div class="lock" id="nav"></div>
+  <div class="lbl">Sign-in lockup (44px tile, 19px wordmark)</div>
+  <div class="lock" id="auth"></div>
+  <div class="lbl">Favicon / mark at real sizes</div>
+  <div class="row" id="sizes"></div>
+  <div class="lbl">On a light surface</div>
+  <div class="light"><div class="lock" id="navlight"></div></div>
+</div>
+<script>
+const G='<defs><linearGradient id="g" x1="4" y1="24" x2="30" y2="4" gradientUnits="userSpaceOnUse"><stop stop-color="#A855F7"/><stop offset=".5" stop-color="#6366F1"/><stop offset="1" stop-color="#38BDF8"/></linearGradient></defs>';
+const geo='<path d="M4.6 21.2 C2.2 16.4 11.6 9.4 20.2 7.6 C25.6 6.4 29.2 8.8 28.2 12.2 C27.2 15.8 20.4 18.4 13.6 19.6" stroke="url(#g)" stroke-width="1.8" stroke-linecap="round" fill="none" opacity=".45"/><path d="M9.6 24.4 L16 7.6 L22.4 24.4 M12.2 19.2 H19.8" stroke="url(#g)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M25.6 2.6 L26.6 6.2 L30.2 7.2 L26.6 8.2 L25.6 11.8 L24.6 8.2 L21 7.2 L24.6 6.2 Z" fill="url(#g)"/>';
+function mark(px){return `<span class="tile" style="width:${px}px;height:${px}px"><svg width="${Math.round(px*.84)}" height="${Math.round(px*.84)}" viewBox="0 0 32 32" fill="none">${G}${geo}</svg></span>`}
+function lock(tile,fs,sub){return mark(tile)+`<span><div class="w" style="font-size:${fs}px">AI-Life<span class="grad">Hub</span></div>${sub?`<div class="sub">${sub}</div>`:''}</span>`}
+document.getElementById('nav').innerHTML=lock(36,15,'');
+document.getElementById('auth').innerHTML=lock(44,19,'Organize · Focus · Achieve');
+document.getElementById('navlight').innerHTML=lock(36,15,'');
+document.getElementById('sizes').innerHTML=[16,24,32,48,64,128].map(s=>`<span class="col">${mark(s)}<span class="cap">${s}</span></span>`).join('');
+</script>
