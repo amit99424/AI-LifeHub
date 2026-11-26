@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Check, Database, Download, KeyRound, Link2, LogOut, Monitor, Moon, Palette, Save, Shield, Sparkles, Sun, Trash2, Unlink, User } from 'lucide-react';
+import { AlertTriangle, Check, Database, Download, KeyRound, Link2, LogOut, Monitor, Moon, Palette, Save, Shield, ShieldCheck, Sparkles, Sun, Trash2, User } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth, useProfile, useTheme, useUpdateProfile, useUpdateSettings, type ThemeMode } from '@/lib/auth';
 import type { AiStatus } from '@/lib/types';
@@ -43,18 +43,11 @@ export default function Settings() {
     google: { email: string; linkedAt: string } | null;
     googleAvailable: boolean;
     canUnlinkGoogle: boolean;
+    /** 'google_only' when the UI offers Google and nothing else. */
+    primaryMethod?: 'google_only' | 'google_and_password';
   };
   const methods = useQuery({ queryKey: ['auth-methods'], queryFn: () => api.get<Methods>('/api/auth/methods') });
   const googleStatus = useQuery({ queryKey: ['google-status'], queryFn: fetchGoogleStatus });
-
-  const unlinkGoogle = useMutation({
-    mutationFn: () => api.post('/api/auth/google/unlink'),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['auth-methods'] });
-      toast('Google disconnected from your account.', 'success');
-    },
-    onError: (e) => toast((e as Error).message, 'error'),
-  });
 
   const sessions = useQuery({ queryKey: ['sessions-list'], queryFn: () => api.get<{ sessions: { id: string; userAgent: string | null; ip: string | null; createdAt: string; lastSeenAt: string; current: boolean }[] }>('/api/auth/sessions') });
 
@@ -297,16 +290,6 @@ export default function Settings() {
             <CardHeader title="Sign-in methods" subtitle="How you get into this account" icon={<KeyRound className="h-4.5 w-4.5" />} />
             <div className="space-y-2.5">
               <div className="flex items-start gap-2 rounded-lg border border-[rgb(var(--border))] p-2.5">
-                <KeyRound className="mt-0.5 h-3.5 w-3.5 shrink-0 text-ink-400" />
-                <div className="min-w-0 flex-1">
-                  <p className="text-[11px] font-semibold text-ink-800 dark:text-ink-100">Email &amp; password</p>
-                  <p className="text-[10px] text-ink-400">
-                    {methods.data?.password ? 'Enabled for this account' : 'Not set — you sign in with Google'}
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-start gap-2 rounded-lg border border-[rgb(var(--border))] p-2.5">
                 <Link2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-ink-400" />
                 <div className="min-w-0 flex-1">
                   <p className="text-[11px] font-semibold text-ink-800 dark:text-ink-100">Google</p>
@@ -316,19 +299,14 @@ export default function Settings() {
                     </p>
                   ) : (
                     <p className="text-[10px] text-ink-400">
-                      {googleStatus.data?.configured ? 'Not connected' : 'Google sign-in is not configured on this server'}
+                      {googleStatus.data?.configured ? 'Not connected yet — sign in with Google to connect it' : 'Google sign-in is not configured on this server'}
                     </p>
                   )}
                 </div>
                 {methods.data?.google ? (
-                  <button
-                    onClick={() => unlinkGoogle.mutate()}
-                    disabled={!methods.data.canUnlinkGoogle || unlinkGoogle.isPending}
-                    title={methods.data.canUnlinkGoogle ? 'Disconnect Google' : 'Set a password first so you can still sign in'}
-                    className="flex items-center gap-1 text-[10px] font-semibold text-rose-600 hover:underline disabled:pointer-events-none disabled:opacity-40"
-                  >
-                    <Unlink className="h-3 w-3" /> Disconnect
-                  </button>
+                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+                    <ShieldCheck className="h-3 w-3" /> Active
+                  </span>
                 ) : (
                   googleStatus.data?.configured && (
                     <a href={googleStartUrl('/settings')} className="text-[10px] font-semibold text-brand-600 hover:underline dark:text-brand-400">
@@ -337,11 +315,23 @@ export default function Settings() {
                   )
                 )}
               </div>
-              {methods.data?.google && !methods.data.canUnlinkGoogle && (
-                <p className="text-[10px] leading-relaxed text-amber-700 dark:text-amber-300">
-                  This account signs in with Google only. Keep it connected — there is no password to fall back on.
-                </p>
-              )}
+
+              <div className="flex items-start gap-2 rounded-lg border border-[rgb(var(--border))] p-2.5">
+                <KeyRound className="mt-0.5 h-3.5 w-3.5 shrink-0 text-ink-400" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-[11px] font-semibold text-ink-800 dark:text-ink-100">Email &amp; password</p>
+                  <p className="text-[10px] leading-relaxed text-ink-400">
+                    {methods.data?.password
+                      ? 'Password sign-in was retired from the app. Your old password still works through the API, and Google sign-in reaches this same account.'
+                      : 'Not set — this account uses Google sign-in.'}
+                  </p>
+                </div>
+              </div>
+
+              <p className="text-[10px] leading-relaxed text-ink-400">
+                Google is the only way to sign in, so it stays connected to this account. Your tasks, habits, journal and
+                insights are unaffected by any of this.
+              </p>
             </div>
           </Card>
 

@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, BarChart3, BrainCircuit, CheckCircle2, Lock, Sparkles, Zap } from 'lucide-react';
 
@@ -57,7 +57,7 @@ export function AuthLayout({ title, subtitle, children, footer }: { title: strin
             <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" /> PostgreSQL + Prisma
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" /> JWT + refresh rotation
+            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" /> Google sign-in
           </span>
           <span className="inline-flex items-center gap-1.5">
             <BarChart3 className="h-3.5 w-3.5 text-emerald-400" /> Real analytics
@@ -88,35 +88,6 @@ export function AuthLayout({ title, subtitle, children, footer }: { title: strin
   );
 }
 
-export function FormError({ message }: { message: string | null }) {
-  if (!message) return null;
-  return (
-    <div className="mb-4 flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-[13px] font-medium text-rose-700 dark:border-rose-500/25 dark:bg-rose-500/10 dark:text-rose-300">
-      <span className="mt-0.5">•</span>
-      <span>{message}</span>
-    </div>
-  );
-}
-
-export function PasswordStrength({ value }: { value: string }) {
-  const checks = [
-    { ok: value.length >= 8, label: '8+ characters' },
-    { ok: /[A-Za-z]/.test(value), label: 'a letter' },
-    { ok: /[0-9]/.test(value), label: 'a number' },
-  ];
-  const score = checks.filter((c) => c.ok).length;
-  return (
-    <div className="mt-2 flex items-center gap-2">
-      <div className="flex flex-1 gap-1">
-        {[0, 1, 2].map((i) => (
-          <div key={i} className={`h-1 flex-1 rounded-full transition-colors ${i < score ? (score === 3 ? 'bg-emerald-500' : 'bg-amber-400') : 'bg-ink-200 dark:bg-ink-800'}`} />
-        ))}
-      </div>
-      <span className="text-[10px] text-ink-400">{checks.filter((c) => !c.ok).map((c) => c.label).join(', ') || 'strong'}</span>
-    </div>
-  );
-}
-
 export function AuthLink({ to, children }: { to: string; children: ReactNode }) {
   return (
     <Link to={to} className="inline-flex items-center gap-1 font-semibold text-brand-600 hover:underline dark:text-brand-400">
@@ -124,11 +95,4 @@ export function AuthLink({ to, children }: { to: string; children: ReactNode }) 
       <ArrowRight className="h-3 w-3" />
     </Link>
   );
-}
-
-export function useFormState<T extends Record<string, string>>(initial: T) {
-  const [values, setValues] = useState<T>(initial);
-  const set = (key: keyof T) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
-    setValues((v) => ({ ...v, [key]: e.target.value }));
-  return { values, set, setValues };
 }

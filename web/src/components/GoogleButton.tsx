@@ -6,7 +6,7 @@
  *   2. The API sets an httpOnly CSRF/PKCE cookie and redirects to Google.
  *   3. Google calls the API callback, which exchanges the code server-to-server,
  *      verifies the ID token, links or creates the user and issues the SAME
- *      JWT + rotating refresh session as email/password login.
+ *      JWT + rotating refresh session the API has always used.
  *   4. The API redirects the browser to /auth/google/callback, where the SPA
  *      calls /api/auth/me with the cookies it now holds.
  *
@@ -89,7 +89,31 @@ export function GoogleButton({
   }, []);
 
   // Nothing to show until we know whether the server has Google configured.
-  if (!status?.configured) return null;
+  if (!status?.configured) {
+    if (status === null) {
+      // Still asking the API; reserve the button's height so nothing jumps.
+      return (
+        <div
+          aria-hidden="true"
+          className={cn('h-[46px] w-full animate-pulse rounded-xl border border-[rgb(var(--border))] bg-ink-100 dark:bg-ink-800', className)}
+        />
+      );
+    }
+    return (
+      <div
+        role="status"
+        className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 text-[12px] leading-relaxed text-amber-800 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-200"
+      >
+        <p className="font-semibold">Google sign-in is not available right now.</p>
+        <p className="mt-1">
+          This server has no Google OAuth credentials configured, so accounts cannot be created or opened. If you run
+          AI-LifeHub yourself, set <code className="font-mono text-[11px]">GOOGLE_CLIENT_ID</code>,{' '}
+          <code className="font-mono text-[11px]">GOOGLE_CLIENT_SECRET</code> and{' '}
+          <code className="font-mono text-[11px]">GOOGLE_REDIRECT_URI</code> on the backend.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <a
@@ -126,19 +150,5 @@ export function GoogleButton({
         </>
       )}
     </a>
-  );
-}
-
-/** "or" rule between the Google button and the email/password form. */
-export function OrDivider({ label = 'or' }: { label?: string }) {
-  return (
-    <div className="relative my-5">
-      <div className="absolute inset-0 flex items-center" aria-hidden="true">
-        <div className="w-full border-t border-[rgb(var(--border))]" />
-      </div>
-      <div className="relative flex justify-center">
-        <span className="bg-[rgb(var(--bg))] px-2.5 text-[11px] font-medium uppercase tracking-wide text-ink-400">{label}</span>
-      </div>
-    </div>
   );
 }

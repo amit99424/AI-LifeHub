@@ -79,6 +79,10 @@ const EnvSchema = z.object({
         .filter(Boolean),
     ),
   GOOGLE_AUTO_LINK: bool(true),
+  // Which sign-in UI the frontend shows: 'google_only' (default) hides the
+  // email/password forms; 'google_and_password' keeps both. Password login stays
+  // available through the API either way, so existing accounts never lose access.
+  AUTH_UI_MODE: z.enum(['google_only', 'google_and_password']).default('google_only'),
 
   AI_PROVIDER: z.enum(['gemini', 'openai', 'none']).default('none'),
   GEMINI_API_KEY: z.string().optional().default(''),

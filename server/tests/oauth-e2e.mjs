@@ -152,9 +152,13 @@ const newGoogleUser = (over = {}) => ({
   const m = JSON.parse(methods.body || '{}');
   check('auth/methods reports both sign-in methods', m.password === true && m.google?.email === email);
 
-  // Unlinking is allowed because a password exists.
+  // A password exists, but Google is the only UI: disconnecting it is still
+  // refused so the account cannot lose the only button it has.
   const unlink = await req('/api/auth/google/unlink', { method: 'POST', headers: { Cookie: cookies } });
-  check('unlink Google works when a password exists', unlink.status === 200);
+  check(
+    'unlink is refused even with a password while AUTH_UI_MODE=google_only',
+    unlink.status === 400 && JSON.parse(unlink.body || '{}').error?.code === 'google_required',
+  );
 }
 
 // ── 6. Google-only account cannot be unlinked (lockout protection) ───────
@@ -188,6 +192,47 @@ const newGoogleUser = (over = {}) => ({
   check('valid callback succeeds once', (first.headers.location ?? '').includes('status='));
   const second = await req(`/api/auth/google/callback?code=${code}&state=st7`, { headers: { Cookie: 'lh_oauth_state=st7.v' } });
   check('replayed authorization code is rejected', (second.headers.location ?? '').includes('error=google_code_invalid'));
+}
+
+// ── 8. Google-only UI policy ─────────────────────────────────────────────
+// The frontend shows only the Google button (AUTH_UI_MODE=google_only by
+// default), but the API must keep accepting password login for accounts that
+// already have one, so no existing user loses access.
+{
+  const claims = newGoogleUser({ sub: `policy-${stamp}`, email: `policy.${stamp}@example.com` });
+  const code = newCode(claims);
+  const res = await req(`/api/auth/google/callback?code=${code}&state=st8`, {
+    headers: { Cookie: 'lh_oauth_state=st8.verifier8' },
+  });
+  const cookies = [].concat(res.headers['set-cookie'] ?? []).map((c) => c.split(';')[0]).join('; ');
+  const methods = await req('/api/auth/methods', { headers: { Cookie: cookies } });
+  const m = JSON.parse(methods.body || '{}');
+  check('auth/methods reports primaryMethod=google_only', m.primaryMethod === 'google_only');
+  check('auth/methods still reports googleAvailable', m.googleAvailable === true);
+
+  const unlink = await req('/api/auth/google/unlink', { method: 'POST', headers: { Cookie: cookies } });
+  const uBody = JSON.parse(unlink.body || '{}');
+  check(
+    'google_only: disconnecting Google is refused with google_required',
+    unlink.status === 400 && uBody.error?.code === 'google_required',
+  );
+
+  // An existing password account must still be able to use the API, even though
+  // the UI no longer shows a password form.
+  const email = `legacy.${stamp}@example.com`;
+  const reg = await req('/api/auth/register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'Legacy User', email, password: 'LegacyPass123' }),
+  });
+  check('google_only: password registration still works through the API', reg.status === 201);
+
+  const login = await req('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password: 'LegacyPass123' }),
+  });
+  check('google_only: existing password account can still sign in (no lockout)', login.status === 200);
 }
 
 const failed = results.filter((r) => !r.ok);

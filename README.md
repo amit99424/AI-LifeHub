@@ -26,6 +26,7 @@
 - [The AI pipeline](#the-ai-pipeline)
 - [Repository structure](#repository-structure)
 - [Getting started](#getting-started)
+- [Sign-in: Google only](#sign-in-google-only)
 - [Google sign-in (OAuth 2.0)](#google-sign-in-oauth-20)
 - [Environment variables](#environment-variables)
 - [Database setup & migrations](#database-setup--migrations)
@@ -356,6 +357,36 @@ Open **http://localhost:5173**.
 - Sign in with the seeded demo account: **`demo@ai-lifehub.dev` / `DemoPass123`** (change or delete it before any real deployment).
 
 ---
+
+## Sign-in: Google only
+
+The app's sign-in UI is Google-only. `/login` and `/register` show one button —
+**Continue with Google** — and nothing else; there is no email/password form, no
+"Forgot password" and no "Reset password" page. Google decides whether the person
+is new: a first-time sign-in creates the account and drops them into onboarding, a
+returning sign-in opens their existing account.
+
+**Existing accounts are never lost.** The API is unchanged:
+
+| | Behaviour |
+|---|---|
+| Password login | `POST /api/auth/login` still works exactly as before, for accounts that have a password. |
+| Password signup | `POST /api/auth/register` still works; it is simply no longer linked from the UI. |
+| Existing account + Google | Signing in with the same verified Google email **links** the Google identity to that account. Nothing is copied, moved or deleted. |
+| Sessions | A Google sign-in issues the same JWT + rotating refresh cookies the password flow used, so every feature and every live session keeps working. |
+| Disconnecting Google | Refused while Google is the only way in (`AUTH_UI_MODE=google_only`) — `400 google_required`. Nobody can lock themselves out. |
+| `/forgot-password`, `/reset-password` | Kept as routes, redirecting to `/login`, so old bookmarks and emailed links do not 404. The backend endpoints still exist for API clients. |
+
+### `AUTH_UI_MODE`
+
+| Value | Sign-in UI | API |
+|---|---|---|
+| `google_only` (default) | Google button only | Password login/signup still accepted |
+| `google_and_password` | Google button + email/password form | Same |
+
+Set it on the backend (Render → Environment) if you ever want the password form
+back; no code change or redeploy of the frontend is needed. The value is exposed
+to the app as `primaryMethod` in `GET /api/auth/methods`.
 
 ## Google sign-in (OAuth 2.0)
 

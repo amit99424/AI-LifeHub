@@ -21,6 +21,11 @@ import { ApiError, ah } from '../lib/http.js';
 import { requireAuth } from '../middleware/auth.js';
 import { authLimiter } from '../middleware/rateLimit.js';
 import { config } from '../config.js';
+
+/** 'google_only' = the UI offers Google and nothing else. */
+function authUiMode(): 'google_only' | 'google_and_password' {
+  return config.AUTH_UI_MODE;
+}
 import {
   GOOGLE_SCOPES,
   GoogleOAuthError,
@@ -201,6 +206,10 @@ googleAuthRouter.get(
       ...methods,
       googleAvailable: googleConfigured(),
       canUnlinkGoogle: Boolean(methods.google) && methods.password,
+      // Which sign-in UI this deployment shows. The API itself still accepts
+      // password login (and /api/auth/login keeps working) so existing clients
+      // and automation are never broken by a frontend policy change.
+      primaryMethod: authUiMode(),
     });
   }),
 );
@@ -212,6 +221,15 @@ googleAuthRouter.post(
   ah(async (req, res) => {
     const methods = await signInMethods(req.user!.id);
     if (!methods.google) throw ApiError.badRequest('Google is not connected to this account.');
+    if (authUiMode() === 'google_only') {
+      // Google is the only way into the product: disconnecting it would lock
+      // this user out of their own account.
+      throw new ApiError(
+        400,
+        'Google is the only way to sign in to AI-LifeHub, so it cannot be disconnected.',
+        'google_required',
+      );
+    }
     if (!methods.password) {
       // Refusing here prevents locking the user out of their own account.
       throw ApiError.badRequest(

@@ -8,8 +8,6 @@ import { AppShell } from '@/components/AppShell';
 const Login = lazy(() => import('@/pages/Login'));
 const GoogleCallback = lazy(() => import('@/pages/GoogleCallback'));
 const Register = lazy(() => import('@/pages/Register'));
-const ForgotPassword = lazy(() => import('@/pages/ForgotPassword'));
-const ResetPassword = lazy(() => import('@/pages/ResetPassword'));
 const Onboarding = lazy(() => import('@/pages/Onboarding'));
 const Dashboard = lazy(() => import('@/pages/Dashboard'));
 const Tasks = lazy(() => import('@/pages/Tasks'));
@@ -102,8 +100,11 @@ export default function App() {
                   cookies are set before the SPA is reached. */}
               <Route path="/auth/google/callback" element={<Suspense fallback={<FullPageLoader />}><GoogleCallback /></Suspense>} />
               <Route path="/register" element={<PublicOnly><Register /></PublicOnly>} />
-              <Route path="/forgot-password" element={<PublicOnly><ForgotPassword /></PublicOnly>} />
-              <Route path="/reset-password" element={<PublicOnly><ResetPassword /></PublicOnly>} />
+              {/* Password sign-in was retired from the UI: Google is the only way in.
+                  The old URLs stay alive so bookmarks and emailed reset links land
+                  somewhere sensible instead of a 404. */}
+              <Route path="/forgot-password" element={<Navigate to="/login" replace />} />
+              <Route path="/reset-password" element={<Navigate to="/login" replace />} />
               <Route path="/onboarding" element={<OnboardingGate />} />
 
               <Route element={<ProtectedRoute />}>
