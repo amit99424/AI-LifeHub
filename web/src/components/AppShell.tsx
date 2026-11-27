@@ -210,6 +210,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen bg-[rgb(var(--bg))]">
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-brand-600 focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-white"
+      >
+        Skip to content
+      </a>
       {/* desktop sidebar */}
       <aside className="sticky top-0 hidden h-screen w-[264px] shrink-0 border-r border-[rgb(var(--border))] bg-[rgb(var(--surface))] lg:block">{sidebar}</aside>
 
@@ -222,7 +228,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-[rgb(var(--border))] bg-[rgb(var(--surface))]/85 px-4 backdrop-blur-md sm:px-6">
+        <header className="app-header sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-[rgb(var(--border))] bg-[rgb(var(--surface))]/85 px-4 backdrop-blur-md sm:px-6">
           <button className="rounded-lg p-2 text-ink-500 hover:bg-ink-100 lg:hidden dark:hover:bg-ink-800" onClick={() => setMobileOpen(true)} aria-label="Open menu">
             <Menu className="h-5 w-5" />
           </button>
@@ -248,7 +254,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        <main className="mx-auto w-full max-w-[1400px] flex-1 px-4 py-6 sm:px-6 lg:py-8">{children}</main>
+        <main id="main" className="mx-auto w-full max-w-[1400px] flex-1 px-4 py-6 sm:px-6 lg:py-8">{children}</main>
 
         <footer className="border-t border-[rgb(var(--border))] px-6 py-4 text-center text-[11px] text-ink-400">
           AI-LifeHub · insights are generated from your own activity and are not medical advice.

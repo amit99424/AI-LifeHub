@@ -193,22 +193,39 @@ export function Skeleton({ className }: { className?: string }) {
   return <div className={cn('skeleton', className)} />;
 }
 
-export function EmptyState({ icon, title, description, action, className }: { icon: ReactNode; title: string; description: string; action?: ReactNode; className?: string }) {
+export function EmptyState({
+  icon,
+  title,
+  description,
+  action,
+  hint,
+  className,
+}: {
+  icon: ReactNode;
+  title: string;
+  description: string;
+  action?: ReactNode;
+  /** A second, quieter line: why it is empty, or what is not counted. */
+  hint?: string;
+  className?: string;
+}) {
   return (
     <div className={cn('flex flex-col items-center justify-center rounded-2xl border border-dashed border-[rgb(var(--border))] px-6 py-12 text-center', className)}>
       <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-50 text-brand-500 dark:bg-brand-500/10 dark:text-brand-300">{icon}</div>
       <h4 className="font-display text-sm font-bold text-ink-900 dark:text-white">{title}</h4>
       <p className="mt-1 max-w-sm text-xs leading-relaxed text-ink-500 dark:text-ink-400">{description}</p>
+      {hint && <p className="mt-2 max-w-sm text-[11px] leading-relaxed text-ink-400">{hint}</p>}
       {action && <div className="mt-4">{action}</div>}
     </div>
   );
 }
 
-export function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
+export function ErrorState({ message, onRetry, title }: { message: string; onRetry?: () => void; title?: string }) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-2xl border border-rose-200 bg-rose-50/60 px-6 py-8 text-center dark:border-rose-500/20 dark:bg-rose-500/5">
+    <div role="alert" className="flex flex-col items-center justify-center rounded-2xl border border-rose-200 bg-rose-50/60 px-6 py-8 text-center dark:border-rose-500/20 dark:bg-rose-500/5">
       <AlertCircle className="mb-2 h-6 w-6 text-rose-500" />
-      <p className="text-sm font-medium text-rose-700 dark:text-rose-300">{message}</p>
+      <p className="text-sm font-semibold text-rose-700 dark:text-rose-300">{title ?? 'That did not load'}</p>
+      <p className="mt-1 max-w-md text-xs leading-relaxed text-rose-600/90 dark:text-rose-300/80">{message}</p>
       {onRetry && (
         <Button variant="secondary" size="sm" className="mt-3" onClick={onRetry}>
           Try again
