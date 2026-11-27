@@ -12,6 +12,7 @@ import { collectActivityData, truncate } from './collector.js';
 import { compactFeatures, computeFeatures, withGrowth, type FeatureBundle, type GrowthFeatureSummary } from './features.js';
 import { analyseGrowth } from './growth.js';
 import { collectGrowth } from '../routes/skills.js';
+import { dailyPlan, planForPrompt, weeklyReview, reviewForPrompt, type DailyPlanFact, type WeeklyReviewFact } from './planner.js';
 import { AIUnconfiguredError, complete, estimateTokens, parseJsonLoose, truncateToTokens, type LLMMessage } from './llm.js';
 import { config } from '../config.js';
 import { addDaysKey, todayKey } from '../lib/dates.js';
@@ -431,14 +432,30 @@ This is sentiment analysis of text, not a psychological assessment. Never diagno
 // ─────────────────────────────────────────────────────────────
 // Personal assistant
 // ─────────────────────────────────────────────────────────────
+/**
+ * The assistant, with the planning reads attached.
+ *
+ * The plan and the review are computed for every question rather than only for
+ * questions that sound like a plan: the most useful question is often "why am
+ * I falling behind", and answering that needs today's ranking and this week's
+ * figures. Both blocks are deterministic, so a model failure costs the wording,
+ * never the facts.
+ */
 export async function askAssistant(
   userId: string,
   opts: { tz: string; history: { role: 'user' | 'assistant'; content: string }[]; question: string; windowDays?: number },
 ) {
   const windowDays = opts.windowDays ?? 30;
-  const [{ features }, occupationBlock] = await Promise.all([
+  const askedTime = /(\d{1,3})\s*(?:minutes|mins|min|hours?|hrs?)/i.exec(opts.question);
+  const availableMinutes = askedTime
+    ? Number(askedTime[1]) * (/hour|hr/i.test(askedTime[2]) ? 60 : 1)
+    : null;
+
+  const [{ features }, occupationBlock, plan, review] = await Promise.all([
     buildFeatureBundle(userId, opts.tz, windowDays),
     occupationContext(userId),
+    dailyPlan(userId, opts.tz, { availableMinutes }).catch(() => null),
+    weeklyReview(userId, opts.tz).catch(() => null),
   ]);
   const dataBlock = truncateToTokens(compactFeatures(features), config.AI_MAX_CONTEXT_TOKENS);
 
@@ -452,11 +469,24 @@ export async function askAssistant(
       role: 'system',
       content: `${BASE_SYSTEM}
 
-You are the user's personal productivity assistant inside AI-LifeHub. Answer their question using their DATA block. Keep answers under 160 words unless they ask for a detailed breakdown. Use short lines or a compact list when helpful. If they ask something unrelated to their data, answer briefly and steer back to what the data can help with.
+You are the user's personal life assistant inside AI-LifeHub. You can see their tasks, projects, goals, skills, sessions, habits and wellness records, and you answer from them. Keep answers under 170 words unless they ask for a detailed breakdown. Use short lines or a compact list when helpful. If they ask something unrelated to their data, answer briefly and steer back to what the data can help with.
+
+HOW TO ANSWER PLANNING AND REVIEW QUESTIONS:
+- For "what should I focus on", "plan my day/tomorrow", "what first": use the TODAY'S PLAN block. Name at most three tasks in the order given there, quote the reason each one is ranked where it is, respect the stated time available, and say plainly what did not fit.
+- For "why am I falling behind", "how did this week go", "am I consistent": use the THIS WEEK block. Compare only with the previous week's figures in that block. If a comparison is missing, say it is missing.
+- For "help me balance work and personal goals", name the specific goals and tasks from the blocks; do not give generic advice.
+- Never invent a task, goal, project, skill or number that is not in the blocks. If something asked about is absent, say it is not recorded.
+- You cannot change any record yourself. If the user asks you to create, update or complete something, tell them to use the action prompts the app offers, which ask for confirmation first.
 
 DATA WINDOW: ${windowLabel(features)}
 DATA:
-${dataBlock}${availabilityNote}${occupationBlock}`,
+${dataBlock}${availabilityNote}${occupationBlock}${plan ? `
+
+TODAY'S PLAN (computed from recorded rows; the figures are measured, the ordering is a stated heuristic):
+${planForPrompt(plan)}` : ''}${review ? `
+
+THIS WEEK (measured figures only):
+${reviewForPrompt(review)}` : ''}`,
     },
     ...opts.history.slice(-8).map((m) => ({ role: m.role, content: truncate(m.content, 1500) }) as LLMMessage),
     { role: 'user', content: opts.question },
@@ -474,5 +504,7 @@ ${dataBlock}${availabilityNote}${occupationBlock}`,
     model: result.model,
     dataWindow: features.window,
     availability: features.availability,
+    plan,
+    review,
   };
 }

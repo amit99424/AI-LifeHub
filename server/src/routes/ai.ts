@@ -8,6 +8,8 @@ import { aiLimiter } from '../middleware/rateLimit.js';
 import { aiStatus } from '../services/llm.js';
 import { askAssistant, generateInsight, generateInsightSet, insightDto, usageToday } from '../services/ai.js';
 import { buildFeatureBundle } from '../services/ai.js';
+import { dailyPlan, weeklyReview } from '../services/planner.js';
+import { ACTION_KINDS, executeAction, proposeAction } from '../services/actions.js';
 
 export const aiRouter = Router();
 aiRouter.use(requireAuth);
@@ -232,5 +234,96 @@ aiRouter.post(
       availability: answer.availability,
       usage: await usageToday(userId),
     });
+  }),
+);
+
+// ─────────────────────────────────────────────────────────────
+// Phase 6 — daily planning, weekly review, suggestions, actions
+// ─────────────────────────────────────────────────────────────
+
+// GET /api/ai/daily-plan?availableMinutes=180&date=YYYY-MM-DD
+// The deterministic plan. No model is called, so this always answers.
+aiRouter.get(
+  '/daily-plan',
+  validate({
+    query: z.object({
+      date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      availableMinutes: z.coerce.number().int().min(10).max(960).optional(),
+    }),
+  }),
+  ah(async (req, res) => {
+    const q = req.query as unknown as { date?: string; availableMinutes?: number };
+    const plan = await dailyPlan(req.user!.id, userTz(req), { date: q.date, availableMinutes: q.availableMinutes ?? null });
+    res.json({ plan });
+  }),
+);
+
+// GET /api/ai/weekly-review — measured figures, week against the user's own previous week
+aiRouter.get(
+  '/weekly-review',
+  ah(async (req, res) => {
+    res.json({ review: await weeklyReview(req.user!.id, userTz(req)) });
+  }),
+);
+
+// GET /api/ai/suggestions — questions worth asking, only for data that exists
+aiRouter.get(
+  '/suggestions',
+  ah(async (req, res) => {
+    const userId = req.user!.id;
+    const [openTasks, overdue, projects, goals, skills, sessions, habits, wellness] = await Promise.all([
+      prisma.task.count({ where: { userId, status: { in: ['TODO', 'IN_PROGRESS'] } } }),
+      prisma.task.count({ where: { userId, status: { in: ['TODO', 'IN_PROGRESS'] }, dueDate: { lt: new Date() } } }),
+      prisma.project.count({ where: { userId, archivedAt: null } }),
+      prisma.goal.count({ where: { userId, status: 'ACTIVE' } }),
+      prisma.skill.count({ where: { userId, archivedAt: null } }),
+      prisma.workSession.count({ where: { userId, status: 'COMPLETED' } }),
+      prisma.habit.count({ where: { userId } }),
+      prisma.dailyActivity.count({ where: { userId } }),
+    ]);
+    const s: { id: string; text: string; why: string }[] = [];
+    if (openTasks > 0) s.push({ id: 'plan', text: 'Plan my day', why: `${openTasks} open task${openTasks === 1 ? '' : 's'} to fit into today` });
+    if (overdue > 0) s.push({ id: 'behind', text: 'Why am I falling behind?', why: `${overdue} task${overdue === 1 ? '' : 's'} past their due date` });
+    if (projects > 0) s.push({ id: 'project', text: 'Which project needs my attention?', why: `${projects} active container${projects === 1 ? '' : 's'}` });
+    if (goals > 0) s.push({ id: 'balance', text: 'Help me balance work and personal goals', why: `${goals} active goal${goals === 1 ? '' : 's'}` });
+    if (skills > 0) s.push({ id: 'skills', text: 'Am I consistently practising my skills?', why: `${skills} skill${skills === 1 ? '' : 's'} tracked` });
+    if (sessions > 0) s.push({ id: 'week', text: 'How much progress did I make this week?', why: 'Focus sessions are recorded' });
+    if (habits > 0) s.push({ id: 'challenge', text: 'What is my biggest productivity challenge?', why: 'Habit check-ins are recorded' });
+    if (wellness > 0) s.push({ id: 'improve', text: 'What should I improve next week?', why: 'Wellness records are available' });
+    if (s.length === 0) {
+      s.push({ id: 'start', text: 'What can you help me with?', why: 'Nothing is recorded yet, so there is nothing to read' });
+    }
+    res.json({ suggestions: s.slice(0, 6) });
+  }),
+);
+
+// POST /api/ai/actions/propose — the model proposes; nothing is written
+aiRouter.post(
+  '/actions/propose',
+  aiLimiter,
+  validate({ body: z.object({ message: z.string().trim().min(1).max(600) }) }),
+  ah(async (req, res) => {
+    const { message } = req.body as { message: string };
+    const action = await proposeAction(req.user!.id, userTz(req), message);
+    // `action: null` is a normal answer: the request was not something this
+    // assistant can write.
+    res.json({ action });
+  }),
+);
+
+// POST /api/ai/actions/execute — the user confirmed; re-validate and write
+aiRouter.post(
+  '/actions/execute',
+  aiLimiter,
+  validate({
+    body: z.object({
+      kind: z.enum(ACTION_KINDS as unknown as [string, ...string[]]),
+      payload: z.record(z.string(), z.unknown()),
+    }),
+  }),
+  ah(async (req, res) => {
+    const body = req.body as { kind: (typeof ACTION_KINDS)[number]; payload: Record<string, unknown> };
+    const result = await executeAction(req.user!.id, { kind: body.kind, payload: body.payload });
+    res.status(201).json({ result });
   }),
 );

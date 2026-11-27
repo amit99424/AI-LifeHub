@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI-LifeHub · Phase 6 assistant</title>
+    <script>
+      // Same-origin proxy to the local API, exactly as the deployed app does it.
+      window.LH_API = 'http://127.0.0.1:4001';
+    </script>
+    <style>
+      :root {
+        --navy-950: #070b1c;
+        --navy-900: #0b1228;
+        --navy-800: #121a34;
+        --navy-700: #1b2545;
+        --purple: #7c5cff;
+        --purple-soft: rgba(124, 92, 255, 0.14);
+        --ink: #eef1ff;
+        --muted: #8b95b8;
+        --line: rgba(139, 149, 184, 0.18);
+        --rose: #ff6b81;
+        --amber: #ffb020;
+        --green: #3ddc97;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: radial-gradient(1200px 600px at 15% -10%, #1a1740 0%, transparent 60%), var(--navy-950);
+        color: var(--ink);
+        font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      .wrap { max-width: 1080px; margin: 0 auto; padding: 28px 18px 60px; }
+      h1 { font-size: 20px; margin: 0; letter-spacing: -0.02em; }
+      .sub { color: var(--muted); font-size: 12px; margin-top: 4px; }
+      .bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 16px 0 18px; }
+      button {
+        font: inherit; font-size: 12px; font-weight: 600; color: var(--ink); cursor: pointer;
+        background: var(--navy-800); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px;
+        transition: 0.15s;
+      }
+      button:hover { border-color: rgba(124, 92, 255, 0.5); }
+      button.on { background: var(--purple-soft); border-color: rgba(124, 92, 255, 0.55); }
+      button.primary { background: var(--purple); border-color: var(--purple); }
+      button:disabled { opacity: 0.5; cursor: not-allowed; }
+      .card { background: linear-gradient(180deg, rgba(27, 37, 69, 0.55), rgba(11, 18, 40, 0.7)); border: 1px solid var(--line); border-radius: 16px; }
+      .card-h { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+      .card-h p { margin: 0; font-size: 13px; font-weight: 700; }
+      .card-b { padding: 16px; display: grid; gap: 16px; }
+      .pill { font-size: 10px; padding: 3px 8px; border-radius: 999px; background: rgba(139, 149, 184, 0.14); color: var(--muted); font-weight: 600; }
+      .pill.rose { background: rgba(255, 107, 129, 0.14); color: var(--rose); }
+      .pill.amber { background: rgba(255, 176, 32, 0.14); color: var(--amber); }
+      .pill.purple { background: var(--purple-soft); color: #b9a8ff; }
+      .label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 700; margin: 0 0 6px; }
+      .row { display: flex; gap: 10px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 12px; }
+      .num { width: 20px; height: 20px; border-radius: 999px; background: var(--purple); display: grid; place-items: center; font-size: 10px; font-weight: 800; flex: none; margin-top: 1px; }
+      .t { font-size: 12.5px; font-weight: 650; }
+      .why { font-size: 11px; color: var(--muted); line-height: 1.5; margin-top: 2px; }
+      .min { font-size: 10px; font-weight: 700; color: var(--muted); background: rgba(139, 149, 184, 0.14); padding: 3px 8px; border-radius: 999px; align-self: center; flex: none; }
+      .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+      .stat { border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; }
+      .stat b { display: block; font-size: 17px; font-variant-numeric: tabular-nums; margin-top: 2px; }
+      .stat span { font-size: 10px; color: var(--muted); }
+      ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 5px; }
+      li { font-size: 11.5px; color: #c3cae6; line-height: 1.55; }
+      .warn { border: 1px solid rgba(255, 176, 32, 0.3); background: rgba(255, 176, 32, 0.07); border-radius: 12px; padding: 10px 12px; }
+      .warn p { margin: 0 0 4px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--amber); }
+      .warn li { color: #f0d8a8; }
+      .action { border: 1px solid rgba(124, 92, 255, 0.4); background: var(--purple-soft); border-radius: 14px; padding: 12px 14px; }
+      .action p.k { margin: 0; font-size: 10px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: #b9a8ff; }
+      .action p.s { margin: 5px 0 10px; font-size: 12.5px; }
+      .chat { display: grid; grid-template-columns: 220px 1fr; gap: 14px; }
+      .thread { min-height: 380px; max-height: 520px; overflow: auto; padding: 16px; display: grid; gap: 12px; align-content: start; }
+      .msg { max-width: 88%; font-size: 12.5px; line-height: 1.6; padding: 10px 13px; border-radius: 16px; white-space: pre-wrap; }
+      .msg.u { justify-self: end; background: var(--purple); border-bottom-right-radius: 6px; }
+      .msg.a { justify-self: start; border: 1px solid var(--line); background: rgba(18, 26, 52, 0.85); border-bottom-left-radius: 6px; }
+      .meta { font-size: 9px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); margin-top: 6px; }
+      .composer { border-top: 1px solid var(--line); padding: 12px; display: flex; gap: 8px; }
+      input[type='text'] { flex: 1; background: var(--navy-900); border: 1px solid var(--line); color: var(--ink); border-radius: 10px; padding: 10px 12px; font: inherit; font-size: 12.5px; }
+      input[type='text']:focus { outline: none; border-color: rgba(124, 92, 255, 0.6); }
+      .conv { padding: 7px 9px; border-radius: 9px; font-size: 11.5px; color: #c3cae6; cursor: pointer; border: 1px solid transparent; }
+      .conv:hover { background: rgba(139, 149, 184, 0.08); }
+      .conv.on { background: var(--purple-soft); border-color: rgba(124, 92, 255, 0.35); }
+      .chip { font-size: 11px; padding: 6px 10px; border-radius: 999px; border: 1px solid var(--line); background: transparent; font-weight: 500; }
+      .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+      .hint { font-size: 10px; color: var(--muted); margin-top: 6px; }
+      .err { border: 1px solid rgba(255, 107, 129, 0.4); background: rgba(255, 107, 129, 0.08); border-radius: 12px; padding: 10px 12px; font-size: 11.5px; color: #ffc2cb; }
+      .ok { color: var(--green); font-size: 11.5px; font-weight: 700; display: flex; align-items: center; gap: 6px; margin-top: 10px; }
+      .skel { height: 12px; border-radius: 6px; background: linear-gradient(90deg, rgba(139, 149, 184, 0.1), rgba(139, 149, 184, 0.22), rgba(139, 149, 184, 0.1)); background-size: 200% 100%; animation: sh 1.2s infinite; }
+      @keyframes sh { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+      .dots span { display: inline-block; width: 6px; height: 6px; margin-right: 4px; border-radius: 999px; background: var(--purple); animation: b 1s infinite; }
+      .dots span:nth-child(2) { animation-delay: 0.12s; } .dots span:nth-child(3) { animation-delay: 0.24s; }
+      @keyframes b { 0%, 100% { transform: translateY(0); opacity: 0.5; } 50% { transform: translateY(-3px); opacity: 1; } }
+      .toolbar { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+      @media (max-width: 760px) { .chat { grid-template-columns: 1fr; } .grid3 { grid-template-columns: repeat(2, 1fr); } .wrap { padding: 18px 12px 40px; } }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>AI-LifeHub · AI Life Assistant</h1>
+      <p class="sub">Live against the local API. Every figure below is read from the account's own records.</p>
+
+      <div class="bar">
+        <button id="tab-assistant" class="on" onclick="showTab('assistant')">Assistant</button>
+        <button id="tab-plan" onclick="showTab('plan')">Daily plan</button>
+        <button id="tab-review" onclick="showTab('review')">Weekly review</button>
+        <span class="pill" id="who">signing in…</span>
+      </div>
+
+      <section id="pane-plan" class="card" style="display:none">
+        <div class="card-h">
+          <p>Today’s plan</p>
+          <div class="toolbar">
+            <input id="mins" type="text" placeholder="minutes available" style="width:150px" />
+            <button onclick="setMinutes()">Set</button>
+            <button onclick="loadPlan()">Rebuild</button>
+          </div>
+        </div>
+        <div class="card-b" id="plan-body"><div class="skel" style="width:60%"></div></div>
+      </section>
+
+      <section id="pane-review" class="card" style="display:none">
+        <div class="card-h"><p>This week</p><button onclick="loadReview()">Refresh</button></div>
+        <div class="card-b" id="review-body"><div class="skel" style="width:60%"></div></div>
+      </section>
+
+      <section id="pane-assistant" class="chat">
+        <div class="card" style="padding:10px">
+          <button class="primary" style="width:100%;margin-bottom:8px" onclick="newConversation()">New conversation</button>
+          <div id="convs"></div>
+        </div>
+        <div class="card" style="display:flex;flex-direction:column;min-height:520px">
+          <div class="card-h"><p>LifeHub assistant</p><span class="pill purple" id="model">gemini</span></div>
+          <div class="thread" id="thread"></div>
+          <div class="composer">
+            <input id="q" type="text" placeholder="Ask about your week, or say what to add or finish…" onkeydown="if(event.key==='Enter')send()" />
+            <button class="primary" id="send-btn" onclick="send()">Send</button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <script>
+      const API = window.LH_API;
+      let conversationId = null;
+      let minutes = null;
+      let proposal = null;
+      let busy = false;
+
+      const $ = (id) => document.getElementById(id);
+      const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+      async function api(path, opts = {}) {
+        const res = await fetch(API + path, {
+          credentials: 'include',
+          headers: { 'content-type': 'application/json' },
+          ...opts,
+        });
+        const text = await res.text();
+        const body = text ? JSON.parse(text) : null;
+        if (!res.ok) throw Object.assign(new Error(body?.error?.message || 'Request failed'), { code: body?.error?.code, status: res.status });
+        return body;
+      }
+
+      function showTab(t) {
+        for (const n of ['assistant', 'plan', 'review']) {
+          $('pane-' + n).style.display = n === t ? (n === 'assistant' ? 'grid' : 'block') : 'none';
+          $('tab-' + n).className = n === t ? 'on' : '';
+        }
+        if (t === 'plan') loadPlan();
+        if (t === 'review') loadReview();
+      }
+
+      // ── daily plan ───────────────────────────────────────────
+      async function loadPlan() {
+        $('plan-body').innerHTML = '<div class="skel" style="width:70%"></div><div class="skel" style="width:40%"></div>';
+        try {
+          const { plan: p } = await api('/api/ai/daily-plan' + (minutes ? '?availableMinutes=' + minutes : ''));
+          $('plan-body').innerHTML = planHtml(p);
+        } catch (e) {
+          $('plan-body').innerHTML = `<div class="err">Could not load the plan: ${esc(e.message)}</div>`;
+        }
+      }
+      function setMinutes() {
+        const n = Number($('mins').value);
+        minutes = Number.isFinite(n) && n >= 10 ? Math.min(960, Math.round(n)) : null;
+        loadPlan();
+      }
+      function planHtml(p) {
+        const blocks = p.blocks.length
+          ? p.blocks.map((b, i) => `<div class="row"><span class="num">${i + 1}</span><div style="flex:1;min-width:0"><p class="t">${esc(b.title)}</p><p class="why">${esc(b.why)}</p></div><span class="min">${b.minutes} min</span></div>`).join('')
+          : '<li>Nothing fits, or nothing is open.</li>';
+        const postponed = p.postponed.length
+          ? p.postponed.slice(0, 6).map((x) => `<li><b style="color:#c3cae6">${esc(x.title)}</b> — ${esc(x.reason)}</li>`).join('')
+          : '<li>Nothing was postponed.</li>';
+        const deadlines = p.deadlines.length
+          ? p.deadlines.map((d) => `<li>${esc(d.title)} — <b style="color:${d.daysUntil <= 1 ? 'var(--rose)' : 'var(--muted)'}">${d.daysUntil === 0 ? 'today' : 'in ' + d.daysUntil + 'd'}</b></li>`).join('')
+          : '<li>No deadlines in the next 14 days.</li>';
+        const caveats = p.caveats.length ? `<div class="warn"><p>What this plan cannot see</p><ul>${p.caveats.map((c) => `<li>• ${esc(c)}</li>`).join('')}</ul></div>` : '';
+        const breaks = p.breaks.length ? `<div><p class="label">Breaks</p><ul>${p.breaks.map((b) => `<li>• ${esc(b)}</li>`).join('')}</ul></div>` : '';
+        const ranked = p.priorities.slice(0, 5).map((t, i) => `<li><b style="color:#eef1ff">${i + 1}. ${esc(t.title)}</b> <span class="pill ${t.urgency === 'overdue' ? 'rose' : t.urgency === 'today' ? 'amber' : ''}">${t.urgency}</span><br>${esc(t.reasons.join(' '))}</li>`).join('');
+        return `
+          <div style="border:1px solid var(--line);border-radius:12px;padding:10px 12px">
+            <p class="label">Time available</p>
+            <p style="margin:0;font-size:12.5px">${p.budget.minutes === null ? 'Not known — so nothing is assumed to fit.' : p.budget.minutes + ' minutes'}
+              <span style="color:var(--muted);font-size:11px"> ${esc(p.budget.basis)}</span></p>
+          </div>
+          <div><p class="label">Recommended order</p><div style="display:grid;gap:6px">${blocks}</div></div>
+          ${breaks}
+          <div><p class="label">Ranked work, with the reason</p><ul>${ranked || '<li>No open tasks.</li>'}</ul></div>
+          <div><p class="label">Deadlines in the next 14 days</p><ul>${deadlines}</ul></div>
+          <div><p class="label">Not today</p><ul>${postponed}</ul></div>
+          ${caveats}`;
+      }
+
+      // ── weekly review ────────────────────────────────────────
+      async function loadReview() {
+        $('review-body').innerHTML = '<div class="skel" style="width:70%"></div>';
+        try {
+          const { review: r } = await api('/api/ai/weekly-review');
+          const stats = r.deltas.map((d) => `<div class="stat"><span>${esc(d.label)}</span><b>${d.thisWeek ?? '—'}</b><span>${d.change === null ? 'no comparison' : (d.change > 0 ? '+' : '') + d.change + ' vs last week'}</span></div>`).join('');
+          const goals = r.goals.length ? r.goals.map((g) => `<li><b style="color:#eef1ff">${esc(g.title)}</b> — ${g.current ?? 'not recorded'} of ${g.target ?? 'no target'}${g.metric ? ' ' + esc(g.metric) : ''}${g.fraction === null ? ' (no percentage can be computed)' : ' (' + Math.round(g.fraction * 100) + '%)'}${g.deadline ? ', due ' + g.deadline : ''}</li>`).join('') : '<li>No active goals.</li>';
+          const obstacles = r.obstacles.length ? `<div><p class="label">What the records show</p><ul>${r.obstacles.map((o) => `<li>• ${esc(o)}</li>`).join('')}</ul></div>` : '';
+          const caveats = r.caveats.length ? `<div class="warn"><p>Missing</p><ul>${r.caveats.map((c) => `<li>• ${esc(c)}</li>`).join('')}</ul></div>` : '';
+          $('review-body').innerHTML = `
+            ${r.enoughData ? '' : '<div class="warn"><p>Thin week</p><ul><li>There are only a few records this week, so this is a list of what exists rather than a picture of your week.</li></ul></div>'}
+            <div class="grid3">${stats}</div>
+            <div><p class="label">Goals</p><ul>${goals}</ul></div>
+            ${obstacles}${caveats}`;
+        } catch (e) {
+          $('review-body').innerHTML = `<div class="err">Could not load the review: ${esc(e.message)}</div>`;
+        }
+      }
+
+      // ── chat ─────────────────────────────────────────────────
+      function renderThread(messages) {
+        $('thread').innerHTML = messages.map((m) => `<div class="msg ${m.role === 'user' ? 'u' : 'a'}">${esc(m.content)}${m.role === 'assistant' && m.provider ? `<div class="meta">${esc(m.provider)}${m.model ? ' · ' + esc(m.model) : ''}</div>` : ''}</div>`).join('') + (proposal ? actionHtml(proposal) : '');
+        $('thread').scrollTop = $('thread').scrollHeight;
+      }
+      function actionHtml(a) {
+        return `<div class="action">
+          <p class="k">Proposed action · needs your confirmation</p>
+          <p class="s">${esc(a.summary)}</p>
+          <div class="toolbar">
+            <button class="primary" onclick="confirmAction()">Confirm</button>
+            <button onclick="cancelAction()">Cancel</button>
+            <span style="font-size:10.5px;color:var(--muted)">Nothing has been saved yet.</span>
+          </div>
+        </div>`;
+      }
+      async function confirmAction() {
+        if (!proposal) return;
+        try {
+          const { result } = await api('/api/ai/actions/execute', { method: 'POST', body: JSON.stringify({ kind: proposal.kind, payload: proposal.payload }) });
+          const msg = result.message;
+          proposal = null;
+          const t = $('thread');
+          t.insertAdjacentHTML('beforeend', `<div class="ok">✓ ${esc(msg)}</div>`);
+          t.scrollTop = t.scrollHeight;
+          loadConversations();
+        } catch (e) {
+          $('thread').insertAdjacentHTML('beforeend', `<div class="err">${esc(e.message)}</div>`);
+        }
+      }
+      function cancelAction() {
+        proposal = null;
+        renderThread(currentMessages);
+      }
+
+      let currentMessages = [];
+      async function loadConversations() {
+        const { conversations } = await api('/api/ai/conversations');
+        $('convs').innerHTML = conversations.map((c) => `<div class="conv ${c.id === conversationId ? 'on' : ''}" onclick="openConversation('${c.id}')">${esc(c.title)}<div style="font-size:9.5px;color:var(--muted)">${esc((c.messages ?? 0) + ' messages')}</div></div>`).join('') || '<div class="conv" style="color:var(--muted)">No conversations yet.</div>';
+      }
+      async function openConversation(id) {
+        const { conversation } = await api('/api/ai/conversations/' + id);
+        conversationId = id;
+        proposal = null;
+        currentMessages = conversation.messages;
+        renderThread(currentMessages);
+        loadConversations();
+      }
+      function newConversation() {
+        conversationId = null;
+        proposal = null;
+        currentMessages = [];
+        renderThread([]);
+        loadConversations();
+        $('q').focus();
+      }
+
+      async function send() {
+        const q = $('q').value.trim();
+        if (!q || busy) return;
+        busy = true;
+        $('send-btn').disabled = true;
+        $('q').value = '';
+        proposal = null;
+        currentMessages = [...currentMessages, { role: 'user', content: q, id: 'tmp' }];
+        renderThread(currentMessages);
+        $('thread').insertAdjacentHTML('beforeend', '<div class="msg a dots"><span></span><span></span><span></span> reading your data…</div>');
+        try {
+          const res = await api('/api/ai/chat', { method: 'POST', body: JSON.stringify({ conversationId: conversationId ?? undefined, message: q }) });
+          conversationId = res.conversationId;
+          currentMessages = [...currentMessages.slice(0, -1), res.message.role === 'user' ? res.message : { role: 'user', content: q }, ...(res.message.role === 'user' ? [] : [res.message])];
+          renderThread(currentMessages);
+          loadConversations();
+        } catch (e) {
+          // Not a question this endpoint can answer: maybe it is an action.
+          try {
+            const { action } = await api('/api/ai/actions/propose', { method: 'POST', body: JSON.stringify({ message: q }) });
+            if (action) {
+              proposal = action;
+              renderThread(currentMessages);
+            } else {
+              currentMessages = currentMessages.slice(0, -1);
+              renderThread(currentMessages);
+              $('thread').insertAdjacentHTML('beforeend', `<div class="err">${esc(e.message)}</div>`);
+              $('q').value = q;
+            }
+          } catch {
+            currentMessages = currentMessages.slice(0, -1);
+            renderThread(currentMessages);
+            $('thread').insertAdjacentHTML('beforeend', `<div class="err">${esc(e.message)}</div>`);
+            $('q').value = q;
+          }
+        } finally {
+          busy = false;
+          $('send-btn').disabled = false;
+        }
+      }
+
+      async function boot() {
+        try {
+          const me = await api('/api/auth/me');
+          $('who').textContent = me.user.email;
+          const status = await api('/api/ai/status');
+          $('model').textContent = status.configured ? status.provider + (status.model ? ' · ' + status.model : '') : 'not configured';
+          const { suggestions } = await api('/api/ai/suggestions');
+          $('thread').innerHTML = `<div style="text-align:center;padding:10px 0 4px">
+            <p style="font-weight:800;font-size:14px;margin:0 0 4px">Ask about your own data</p>
+            <p style="font-size:11.5px;color:var(--muted);margin:0 auto;max-width:380px;line-height:1.6">The assistant reads your tasks, projects, goals, skills, sessions, habits and wellness records, and tells you when there isn’t enough history to answer.</p>
+            <div class="chips" style="justify-content:center;margin-top:12px">${suggestions.map((s) => `<button class="chip" title="${esc(s.why)}" onclick="quick(${JSON.stringify(s.text).replace(/"/g, '&quot;')})">${esc(s.text)}</button>`).join('')}</div>
+            <p class="hint">Suggestions come from what this account actually holds.</p>
+          </div>`;
+          loadConversations();
+        } catch (e) {
+          $('who').textContent = 'sign-in failed: ' + e.message;
+        }
+      }
+      function quick(t) { $('q').value = t; send(); }
+      boot();
+    </script>
+  </body>
+</html>

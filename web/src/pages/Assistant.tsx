@@ -1,22 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Bot, ChevronRight, MessageSquarePlus, RefreshCw, Send, Sparkles, Trash2, User, X } from 'lucide-react';
+import { AlertTriangle, Bot, CalendarDays, ChevronRight, ClipboardList, MessageSquarePlus, RefreshCw, Send, Sparkles, Trash2, User, X } from 'lucide-react';
 import { api } from '@/lib/api';
 import type { ChatMessage, Conversation } from '@/lib/types';
 import { Badge, Button, Card, EmptyState, Skeleton, Textarea, toast } from '@/components/ui';
 import { AiConfigBanner } from '@/components/AiConfigBanner';
+import { ActionCard, DailyPlanPanel, WeeklyReviewPanel } from '@/components/assistant/AssistantPanels';
+import { useAiSuggestions, useExecuteAction, useProposeAction } from '@/lib/assistant';
+import type { ProposedActionDto } from '@/lib/types';
 import { useAiStatus } from '@/hooks/useAiStatus';
 import { cn, relativeTime } from '@/lib/utils';
-
-const SUGGESTIONS = [
-  'What should I focus on today?',
-  'Analyze my last 7 days.',
-  'Why am I missing my deadlines?',
-  'How consistent are my habits?',
-  'What are my productivity patterns?',
-  'Suggest a better daily routine.',
-  'Summarize my weekly progress.',
-];
 
 export default function Assistant() {
   const qc = useQueryClient();
@@ -28,6 +21,13 @@ export default function Assistant() {
   const [error, setError] = useState<{ message: string; hint: string } | null>(null);
   const [dataWindow, setDataWindow] = useState<{ from: string; to: string; days: number } | null>(null);
   const [availability, setAvailability] = useState<{ daysWithAnyActivity: number; missing: string[]; sufficientForPatterns: boolean } | null>(null);
+  // Phase 6: a proposal is shown, never applied, until the user confirms it.
+  const [proposal, setProposal] = useState<{ message: string; action: ProposedActionDto } | null>(null);
+  const [actionDone, setActionDone] = useState<string | null>(null);
+  const [panel, setPanel] = useState<'plan' | 'review' | null>(null);
+  const propose = useProposeAction();
+  const execute = useExecuteAction();
+  const suggestions = useAiSuggestions();
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -67,6 +67,8 @@ export default function Assistant() {
     if (!question || sending) return;
     setInput('');
     setError(null);
+    setProposal(null);
+    setActionDone(null);
     setSending(true);
     const optimistic: ChatMessage = { id: `tmp-${Date.now()}`, role: 'user', content: question, createdAt: new Date().toISOString() };
     setMessages((m) => [...m, optimistic]);
@@ -80,6 +82,19 @@ export default function Assistant() {
       void qc.invalidateQueries({ queryKey: ['ai-status'] });
     } catch (err) {
       const e = err as { message?: string; code?: string; status?: number };
+
+      // The question may have been a request to change something, which the
+      // chat endpoint answers with an error. Ask for a proposal and show it for
+      // confirmation instead of failing.
+      const maybe = await propose.mutateAsync(question).catch(() => null);
+      if (maybe?.action) {
+        setProposal({ message: question, action: maybe.action });
+        setMessages((m) => m.filter((x) => x.id !== optimistic.id));
+        setSending(false);
+        inputRef.current?.focus();
+        return;
+      }
+
       setMessages((m) => m.filter((x) => x.id !== optimistic.id));
       // Put the question back so the user can retry without retyping it.
       setInput(question);
@@ -181,6 +196,46 @@ export default function Assistant() {
 
       <AiConfigBanner />
 
+      <div className="grid gap-1.5 sm:grid-cols-2">
+        <button
+          onClick={() => setPanel(panel === 'plan' ? null : 'plan')}
+          className={cn(
+            'flex items-center gap-2.5 rounded-xl border px-3.5 py-2.5 text-left transition',
+            panel === 'plan'
+              ? 'border-brand-400 bg-brand-50 dark:border-brand-500/40 dark:bg-brand-500/10'
+              : 'border-[rgb(var(--border))] hover:border-brand-300 hover:bg-brand-50/50 dark:hover:bg-brand-500/5',
+          )}
+        >
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-600 text-white">
+            <CalendarDays className="h-4 w-4" />
+          </span>
+          <span className="min-w-0">
+            <span className="block text-[12.5px] font-bold text-ink-900 dark:text-white">Plan my day</span>
+            <span className="block truncate text-[10.5px] text-ink-500">What fits, in what order, and why</span>
+          </span>
+        </button>
+        <button
+          onClick={() => setPanel(panel === 'review' ? null : 'review')}
+          className={cn(
+            'flex items-center gap-2.5 rounded-xl border px-3.5 py-2.5 text-left transition',
+            panel === 'review'
+              ? 'border-brand-400 bg-brand-50 dark:border-brand-500/40 dark:bg-brand-500/10'
+              : 'border-[rgb(var(--border))] hover:border-brand-300 hover:bg-brand-50/50 dark:hover:bg-brand-500/5',
+          )}
+        >
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-600 text-white">
+            <ClipboardList className="h-4 w-4" />
+          </span>
+          <span className="min-w-0">
+            <span className="block text-[12.5px] font-bold text-ink-900 dark:text-white">Weekly review</span>
+            <span className="block truncate text-[10.5px] text-ink-500">This week against your own last week</span>
+          </span>
+        </button>
+      </div>
+
+      {panel === 'plan' && <DailyPlanPanel onAsk={(q) => void submit(q)} />}
+      {panel === 'review' && <WeeklyReviewPanel onAsk={(q) => void submit(q)} />}
+
       {availability && !availability.sufficientForPatterns && (
         <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50/70 px-3.5 py-2.5 text-[11px] text-amber-800 dark:border-amber-500/25 dark:bg-amber-500/5 dark:text-amber-200">
           <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -230,16 +285,19 @@ export default function Assistant() {
                   The assistant reads a computed summary of your tasks, habits, mood, sessions and journal — not raw tables — and tells you when there isn’t enough history to answer.
                 </p>
                 <div className="mt-5 flex max-w-lg flex-wrap justify-center gap-1.5">
-                  {SUGGESTIONS.map((s) => (
+                  {(suggestions.data ?? []).map((s) => (
                     <button
-                      key={s}
-                      onClick={() => void submit(s)}
+                      key={s.id}
+                      onClick={() => void submit(s.text)}
+                      title={s.why}
                       className="inline-flex items-center gap-1 rounded-full border border-[rgb(var(--border))] px-3 py-1.5 text-[11px] font-medium text-ink-600 transition hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700 dark:text-ink-300 dark:hover:bg-brand-500/10"
                     >
-                      {s} <ChevronRight className="h-3 w-3" />
+                      {s.text} <ChevronRight className="h-3 w-3" />
                     </button>
                   ))}
+                  {suggestions.isPending && <Skeleton className="h-7 w-32 rounded-full" />}
                 </div>
+                <p className="mt-2 text-[10px] text-ink-400">Suggestions come from what your account actually holds.</p>
               </div>
             ) : (
               messages.map((m) => (
@@ -272,6 +330,33 @@ export default function Assistant() {
                   )}
                 </div>
               ))
+            )}
+
+            {proposal && (
+              <ActionCard
+                action={proposal.action}
+                pending={execute.isPending}
+                done={actionDone}
+                onCancel={() => {
+                  setProposal(null);
+                  setActionDone(null);
+                }}
+                onConfirm={() => {
+                  execute.mutate(
+                    { kind: proposal.action.kind, payload: proposal.action.payload },
+                    {
+                      onSuccess: (r) => {
+                        setActionDone(r.result.message);
+                        toast(r.result.message, 'success');
+                      },
+                      onError: (e) => {
+                        // A refused write keeps the card up so the reason is readable.
+                        toast((e as Error).message, 'error');
+                      },
+                    },
+                  );
+                }}
+              />
             )}
 
             {sending && (
@@ -316,7 +401,7 @@ export default function Assistant() {
                 ref={inputRef}
                 rows={1}
                 className="max-h-32 min-h-[42px] flex-1 py-2.5"
-                placeholder="Ask about your week, your habits, your deadlines…"
+                placeholder="Ask about your week, or say what to add or finish…"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => {

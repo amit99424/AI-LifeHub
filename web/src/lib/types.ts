@@ -719,3 +719,93 @@ export interface DevelopmentPlanDto {
   appliedCount: number;
   itemCount: number;
 }
+
+// ─────────────────────────────────────────────────────────────
+// Phase 6 — assistant planning, review and actions
+// ─────────────────────────────────────────────────────────────
+
+export interface PlanBudget {
+  minutes: number | null;
+  source: 'stated' | 'typical_session' | 'unknown';
+  basis: string;
+}
+
+export interface PlannedTaskScore {
+  taskId: string;
+  title: string;
+  score: number;
+  reasons: string[];
+  headline: string;
+  urgency: 'overdue' | 'today' | 'soon' | 'none';
+  daysOverdue: number | null;
+  daysUntilDue: number | null;
+  contributesTo: string | null;
+}
+
+export interface DailyPlanDto {
+  date: string;
+  budget: PlanBudget;
+  priorities: PlannedTaskScore[];
+  blocks: { taskId: string; title: string; minutes: number; why: string }[];
+  postponed: { taskId: string; title: string; reason: string }[];
+  deadlines: { id: string; title: string; dueDate: string; daysUntil: number }[];
+  breaks: string[];
+  caveats: string[];
+  context: {
+    openTasks: number;
+    overdueTasks: number;
+    sessionsLogged30d: number;
+    lastSessionMinutes: number | null;
+    wellness: { stress: number | null; energy: number | null; sleepQuality: number | null } | null;
+    activeProjects: number;
+    activeGoals: number;
+  };
+}
+
+export interface WeekFactsDto {
+  weekStart: string;
+  weekEnd: string;
+  tasksCompleted: number;
+  tasksCreated: number;
+  overdueOpen: number;
+  focusMinutes: number;
+  focusSessions: number;
+  habitLogs: number;
+  habitRate: number | null;
+  moodAverage: number | null;
+  wellnessDays: number;
+  avgStress: number | null;
+  avgEnergy: number | null;
+  milestonesDone: number;
+  levelsGained: number;
+  skillsPractised: number;
+}
+
+export interface WeeklyReviewDto {
+  thisWeek: WeekFactsDto;
+  previousWeek: WeekFactsDto | null;
+  deltas: { key: string; label: string; thisWeek: number | null; previous: number | null; change: number | null }[];
+  goals: { id: string; title: string; current: number | null; target: number | null; metric: string | null; deadline: string | null; fraction: number | null }[];
+  behindGoals: WeeklyReviewDto['goals'];
+  skillRead: GrowthAnalysisDto;
+  obstacles: string[];
+  caveats: string[];
+  enoughData: boolean;
+}
+
+export interface SuggestionDto {
+  id: string;
+  text: string;
+  why: string;
+}
+
+export interface ProposedActionDto {
+  kind: 'create_task' | 'create_goal' | 'update_task_status' | 'complete_task' | 'create_milestone' | 'add_skill';
+  summary: string;
+  payload: Record<string, unknown>;
+  references: {
+    task?: { id: string; title: string };
+    project?: { id: string; title: string };
+    goal?: { id: string; title: string };
+  };
+}
