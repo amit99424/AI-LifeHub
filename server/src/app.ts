@@ -17,6 +17,7 @@ import { moodsRouter } from './routes/moods.js';
 import { journalRouter } from './routes/journal.js';
 import { sessionsRouter } from './routes/sessions.js';
 import { activityRouter } from './routes/activity.js';
+import { wellnessRouter } from './routes/wellness.js';
 import { aiRouter } from './routes/ai.js';
 import { analyticsRouter } from './routes/analytics.js';
 import { prisma } from './lib/prisma.js';
@@ -166,6 +167,7 @@ export function createApp() {
   app.use('/api/journal', journalRouter);
   app.use('/api/sessions', sessionsRouter);
   app.use('/api/activity', activityRouter);
+  app.use('/api/wellness', wellnessRouter);
   app.use('/api/ai', aiRouter);
   app.use('/api/analytics', analyticsRouter);
 

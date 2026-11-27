@@ -17,6 +17,19 @@ export interface DayStat {
   focusMinutes: number;
   moodScore: number | null;
   score: number; // 0-100 productivity score for the day
+  /**
+   * Self-reported wellness for the day, when the person logged it.
+   * Null means "not reported" and is never folded in as a zero.
+   */
+  wellness: {
+    sleepHours: number | null;
+    sleepQuality: number | null;
+    energy: number | null;
+    stress: number | null;
+    screenHours: number | null;
+    exerciseMinutes: number | null;
+    focus: number | null;
+  };
 }
 
 export interface ProductivityScore {
@@ -147,7 +160,7 @@ export async function buildAnalytics(
       }),
       prisma.moodLog.findMany({
         where: { userId, date: { gte: from, lt: toExclusive } },
-        select: { date: true, level: true, score: true },
+        select: { date: true, level: true, score: true, focus: true },
         take: 2000,
       }),
       prisma.workSession.findMany({
@@ -157,7 +170,15 @@ export async function buildAnalytics(
       }),
       prisma.dailyActivity.findMany({
         where: { userId, date: { gte: from, lt: toExclusive } },
-        select: { date: true, sleepMinutes: true, screenMinutes: true },
+        select: {
+          date: true,
+          sleepMinutes: true,
+          screenMinutes: true,
+          exerciseMinutes: true,
+          stressLevel: true,
+          energyLevel: true,
+          sleepQuality: true,
+        },
         take: 2000,
       }),
       prisma.journalEntry.count({ where: { userId, date: { gte: from, lt: toExclusive } } }),
@@ -207,7 +228,13 @@ export async function buildAnalytics(
     const k = dateKey(l.date);
     habitsByDay.set(k, (habitsByDay.get(k) ?? 0) + 1);
   }
-  for (const m of moods) moodByDay.set(dateKey(m.date), m.score);
+  const wellnessByDay = new Map<string, (typeof activities)[number]>();
+  for (const a of activities) wellnessByDay.set(dateKey(a.date), a);
+  const focusByDayMood = new Map<string, number>();
+  for (const m of moods) {
+    moodByDay.set(dateKey(m.date), m.score);
+    if (m.focus !== null) focusByDayMood.set(dateKey(m.date), m.focus);
+  }
 
   const daily: DayStat[] = keys.map((k) => {
     const tasksCompleted = completionsByDay.get(k) ?? 0;
@@ -223,7 +250,27 @@ export async function buildAnalytics(
       habitsActive: activeHabitCount,
       focusMinutes,
     });
-    return { date: k, tasksCompleted, tasksCreated, habitsDone, habitsTotal: activeHabitCount, focusMinutes, moodScore, score };
+    const w = wellnessByDay.get(k);
+    const hoursOf = (m: number | null | undefined) => (typeof m === 'number' ? Math.round((m / 60) * 10) / 10 : null);
+    return {
+      date: k,
+      tasksCompleted,
+      tasksCreated,
+      habitsDone,
+      habitsTotal: activeHabitCount,
+      focusMinutes,
+      moodScore,
+      score,
+      wellness: {
+        sleepHours: hoursOf(w?.sleepMinutes),
+        sleepQuality: w?.sleepQuality ?? null,
+        energy: w?.energyLevel ?? null,
+        stress: w?.stressLevel ?? null,
+        screenHours: hoursOf(w?.screenMinutes),
+        exerciseMinutes: w?.exerciseMinutes ?? null,
+        focus: focusByDayMood.get(k) ?? null,
+      },
+    };
   });
 
   // weekly / monthly rollups

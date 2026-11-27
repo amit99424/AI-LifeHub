@@ -401,6 +401,14 @@ model DailyActivity {
   meditationMinutes Int?
   socialMinutes     Int?
   steps             Int?
+
+  // Self-reported 1-5, the same scale MoodLog uses for energy and focus, so the
+  // two can be compared without rescaling. Optional: a person may log sleep and
+  // nothing else, and a null here means "not reported", never "zero".
+  stressLevel       Int? // 1 = calm, 5 = overwhelmed
+  energyLevel       Int? // 1 = drained, 5 = full of energy
+  sleepQuality      Int? // 1 = restless, 5 = deeply rested
+
   source            String   @default("manual") // manual | csv | device
   notes             String?
   isDemo            Boolean  @default(false)

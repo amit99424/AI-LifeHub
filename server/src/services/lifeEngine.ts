@@ -59,6 +59,9 @@ export interface LifeDay {
   mood: number | null;
   stress: number | null;
   focus: number | null;
+  /** Self-reported 1-5 from the daily wellness log. */
+  energy: number | null;
+  sleepQuality: number | null;
   habitRate: number | null;
   tasksCompleted: number | null;
   tasksOverdue: number | null;
@@ -128,6 +131,9 @@ const SPECS: Spec[] = [
   { key: 'studyVsScore', x: 'studyMinutes', y: 'score', xLabel: 'study and work hours', yLabel: 'your daily score' },
   { key: 'overdueVsScore', x: 'tasksOverdue', y: 'score', xLabel: 'overdue tasks', yLabel: 'your daily score' },
   { key: 'sleepVsFocus', x: 'sleepHours', y: 'focus', xLabel: 'sleep', yLabel: 'focus' },
+  { key: 'energyVsScore', x: 'energy', y: 'score', xLabel: 'energy', yLabel: 'your daily score' },
+  { key: 'sleepQualityVsScore', x: 'sleepQuality', y: 'score', xLabel: 'sleep quality', yLabel: 'your daily score' },
+  { key: 'sleepQualityVsFocus', x: 'sleepQuality', y: 'focus', xLabel: 'sleep quality', yLabel: 'focus' },
   { key: 'screenVsFocus', x: 'screenHours', y: 'focus', xLabel: 'screen time', yLabel: 'focus' },
 ];
 
@@ -301,6 +307,8 @@ const DELTA_METRICS: { key: string; label: string; higherIsBetter: boolean }[] =
   { key: 'sleepHours', label: 'Sleep hours', higherIsBetter: true },
   { key: 'screenHours', label: 'Screen time', higherIsBetter: false },
   { key: 'stress', label: 'Stress', higherIsBetter: false },
+  { key: 'energy', label: 'Energy', higherIsBetter: true },
+  { key: 'sleepQuality', label: 'Sleep quality', higherIsBetter: true },
 ];
 
 export interface PeriodSummary {
@@ -314,6 +322,8 @@ export interface PeriodSummary {
   sleepHours: number | null;
   screenHours: number | null;
   stress: number | null;
+  energy: number | null;
+  sleepQuality: number | null;
 }
 
 function avg(nums: (number | null)[]): number | null {
@@ -340,6 +350,8 @@ export function summarisePeriod(days: LifeDay[]): PeriodSummary {
     sleepHours: avg(days.map((d) => d.sleepHours)),
     screenHours: avg(days.map((d) => d.screenHours)),
     stress: avg(days.map((d) => d.stress)),
+    energy: avg(days.map((d) => d.energy)),
+    sleepQuality: avg(days.map((d) => d.sleepQuality)),
   };
 }
 
@@ -416,6 +428,28 @@ export function improvementAreas(days: LifeDay[], compare?: { current: PeriodSum
       severity: stress >= 4.5 ? 'high' : 'medium',
     });
   }
+  const energy = avg(recent.map((d) => d.energy));
+  const quality = avg(recent.map((d) => d.sleepQuality));
+  const energyDays = recent.filter((d) => typeof d.energy === 'number').length;
+
+  if (energy !== null && energyDays >= 3 && energy < 2.5) {
+    areas.push({
+      key: 'energy',
+      title: 'Energy is running low',
+      detail: `You reported energy at ${energy} out of 5 on ${energyDays} of the last ${recent.length} days.`,
+      suggestion: 'Look at the nights that preceded your lowest-energy days rather than the days themselves. The cause is usually the night before.',
+      severity: energy < 2 ? 'high' : 'medium',
+    });
+  }
+  if (quality !== null && quality < 3) {
+    areas.push({
+      key: 'sleepQuality',
+      title: 'Sleep is not restoring you',
+      detail: `You rated sleep quality ${quality} out of 5 on average, while averaging ${sleep ?? '?'}h.`,
+      suggestion: 'Duration and quality are separate problems. If hours look fine but quality does not, the variable is usually when you sleep, not how long.',
+      severity: quality < 2 ? 'high' : 'medium',
+    });
+  }
   if (habit !== null && habit < 60) {
     areas.push({
       key: 'habits',
@@ -462,6 +496,8 @@ export interface Sufficiency {
   daysNeeded: number;
   /** Domains with no data at all. */
   missing: string[];
+  /** Domains with some data, but fewer days than a comparison needs. */
+  thin: string[];
   /** Plain sentence for the UI. Never empty. */
   message: string;
   /** Whether trend-level claims are defensible. */
@@ -474,10 +510,51 @@ export const DAYS_FOR_TRENDS = 7;
 export const DAYS_FOR_CORRELATIONS = MIN_SAMPLE;
 
 export function sufficiency(days: LifeDay[], domainsPresent: Record<string, boolean>): Sufficiency {
-  const tracked = days.filter((d) => d.score !== null || d.tasksCompleted !== null || d.habitRate !== null || d.mood !== null).length;
+  // A day counts as tracked when the person recorded something on it. A
+  // computed score is not evidence: scoreDay returns a number for every day in
+  // the window, including the empty ones, so counting it here would report
+  // "30 days tracked" to someone who had just signed up.
+  const tracked = days.filter(
+    (d) =>
+      (d.tasksCompleted ?? 0) > 0 ||
+      (d.habitRate ?? 0) > 0 ||
+      (d.studyMinutes ?? 0) > 0 ||
+      d.mood !== null ||
+      d.sleepHours !== null ||
+      d.screenHours !== null ||
+      d.exerciseMinutes !== null ||
+      d.stress !== null ||
+      d.energy !== null ||
+      d.sleepQuality !== null,
+  ).length;
   const missing = Object.entries(domainsPresent)
     .filter(([, present]) => !present)
     .map(([name]) => name);
+  // Domains that exist but on too few days to compare. Reported separately so
+  // "not tracked" and "tracked a little" never read the same.
+  const thin = Object.entries(domainsPresent)
+    .filter(([, present]) => present)
+    .map(([name]) => ({
+      name,
+      days: days.filter((d) => {
+        switch (name) {
+          case 'tasks':
+            return (d.tasksCompleted ?? 0) > 0;
+          case 'habits':
+            return (d.habitRate ?? 0) > 0;
+          case 'focus':
+            return (d.studyMinutes ?? 0) > 0;
+          case 'mood':
+            return d.mood !== null;
+          case 'wellness':
+            return d.stress !== null || d.energy !== null || d.sleepQuality !== null;
+          default:
+            return false;
+        }
+      }).length,
+    }))
+    .filter((x) => x.days > 0 && x.days < DAYS_FOR_CORRELATIONS)
+    .map((x) => `${x.name} (${x.days} days)`);
 
   const domainScore = Object.keys(domainsPresent).length
     ? (Object.keys(domainsPresent).length - missing.length) / Object.keys(domainsPresent).length
@@ -495,13 +572,25 @@ export function sufficiency(days: LifeDay[], domainsPresent: Record<string, bool
     message = `${tracked} of ${DAYS_FOR_TRENDS} days recorded. Trends need at least a week before they mean anything.`;
   } else if (!correlationsAvailable) {
     message = `${tracked} days recorded. Trends are available; comparisons between two domains need ${DAYS_FOR_CORRELATIONS} days.`;
-  } else if (missing.length) {
-    message = `Enough data for trends and comparisons. Not tracked yet: ${missing.join(', ')}.`;
+  } else if (missing.length || thin.length) {
+    const parts: string[] = [];
+    if (missing.length) parts.push(`not tracked yet: ${missing.join(', ')}`);
+    if (thin.length) parts.push(`still too few days to compare: ${thin.join(', ')}`);
+    message = `Enough data for trends. ${parts.join('; ')}.`;
   } else {
     message = `${tracked} days tracked across every domain. Trends and comparisons are both available.`;
   }
 
-  return { completeness, daysTracked: tracked, daysNeeded: DAYS_FOR_CORRELATIONS, missing, message, trendsAvailable, correlationsAvailable };
+  return {
+    completeness,
+    daysTracked: tracked,
+    daysNeeded: DAYS_FOR_CORRELATIONS,
+    missing,
+    thin,
+    message,
+    trendsAvailable,
+    correlationsAvailable,
+  };
 }
 
 // ─────────────────────────────────────────────────────────────

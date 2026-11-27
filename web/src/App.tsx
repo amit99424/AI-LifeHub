@@ -16,6 +16,7 @@ const Mood = lazy(() => import('@/pages/Mood'));
 const Journal = lazy(() => import('@/pages/Journal'));
 const Sessions = lazy(() => import('@/pages/Sessions'));
 const Routine = lazy(() => import('@/pages/Routine'));
+const Wellness = lazy(() => import('@/pages/Wellness'));
 const Assistant = lazy(() => import('@/pages/Assistant'));
 const Analytics = lazy(() => import('@/pages/Analytics'));
 const Profile = lazy(() => import('@/pages/Profile'));
@@ -115,6 +116,7 @@ export default function App() {
                 <Route path="/journal" element={<Journal />} />
                 <Route path="/sessions" element={<Sessions />} />
                 <Route path="/routine" element={<Routine />} />
+                <Route path="/wellness" element={<Wellness />} />
                 <Route path="/assistant" element={<Assistant />} />
                 <Route path="/analytics" element={<Analytics />} />
                 <Route path="/profile" element={<Profile />} />

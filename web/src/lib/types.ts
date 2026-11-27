@@ -226,6 +226,18 @@ export interface DayStat {
   focusMinutes: number;
   moodScore: number | null;
   score: number;
+  /** Self-reported wellness for the day. Null means "not reported". */
+  wellness?: DayStatWellness;
+}
+
+export interface DayStatWellness {
+  sleepHours: number | null;
+  sleepQuality: number | null;
+  energy: number | null;
+  stress: number | null;
+  screenHours: number | null;
+  exerciseMinutes: number | null;
+  focus: number | null;
 }
 
 export interface AnalyticsResponse {
@@ -309,8 +321,27 @@ export interface ResolvedOccupation {
   customLabel?: string | null;
 }
 
+export interface LifeAnalysisDto {
+  sufficiency: {
+    daysTracked: number;
+    enough: boolean;
+    message: string;
+    missing: string[];
+  };
+  correlations: {
+    correlations: { key: string; xLabel: string; yLabel: string; r: number; n: number; strength: string; sentence: string }[];
+    withheld: { key: string; xLabel: string; yLabel: string; n: number; need: number }[];
+  };
+  bestTime: { hour: number | null; weekday: string | null; note: string; enoughData: boolean };
+  deltas: { key: string; label: string; current: number | null; previous: number | null; direction: string; withinNoise: boolean }[];
+  improvements: { key: string; title: string; detail: string; suggestion: string; severity: string }[];
+  current: Record<string, number | null>;
+  previous: Record<string, number | null>;
+}
+
 export interface DashboardResponse {
   today: string;
+  life?: LifeAnalysisDto;
   occupation: ResolvedOccupation;
   greetingName: string;
   onboarded: boolean;

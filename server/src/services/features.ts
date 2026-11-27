@@ -93,6 +93,12 @@ export interface RoutineFeatures {
   avgExerciseMinutes: number | null;
   avgMeditationMinutes: number | null;
   avgSocialMinutes: number | null;
+  /** Self-reported 1-5 averages. Null when the person has not reported them. */
+  avgStress: number | null;
+  avgEnergy: number | null;
+  avgSleepQuality: number | null;
+  /** How many days reported each level, so the AI can see the sample size. */
+  levelDays: { stress: number; energy: number; sleepQuality: number };
 }
 
 export interface DataAvailability {
@@ -377,6 +383,14 @@ export function computeFeatures(data: ActivityData, opts: { from: Date; to: Date
     avgExerciseMinutes: round(mean(data.dailyActivities.map((d) => d.exerciseMinutes).filter((x): x is number => typeof x === 'number')), 0),
     avgMeditationMinutes: round(mean(data.dailyActivities.map((d) => d.meditationMinutes).filter((x): x is number => typeof x === 'number')), 0),
     avgSocialMinutes: round(mean(data.dailyActivities.map((d) => d.socialMinutes).filter((x): x is number => typeof x === 'number')), 0),
+    avgStress: round(mean(data.dailyActivities.map((d) => d.stressLevel).filter((x): x is number => typeof x === 'number')), 1),
+    avgEnergy: round(mean(data.dailyActivities.map((d) => d.energyLevel).filter((x): x is number => typeof x === 'number')), 1),
+    avgSleepQuality: round(mean(data.dailyActivities.map((d) => d.sleepQuality).filter((x): x is number => typeof x === 'number')), 1),
+    levelDays: {
+      stress: data.dailyActivities.filter((d) => typeof d.stressLevel === 'number').length,
+      energy: data.dailyActivities.filter((d) => typeof d.energyLevel === 'number').length,
+      sleepQuality: data.dailyActivities.filter((d) => typeof d.sleepQuality === 'number').length,
+    },
   };
 
   // ── correlations (descriptive, computed, never invented) ──

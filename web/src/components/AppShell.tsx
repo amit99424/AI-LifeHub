@@ -14,6 +14,7 @@ import {
   PanelsTopLeft,
   Settings,
   Smile,
+  HeartPulse,
   Sparkles,
   Sun,
   Timer,
@@ -44,6 +45,9 @@ const NAV: NavItem[] = [
     icon: Timer,
     labelFor: { WORKING_PROFESSIONAL: 'Work Sessions', FREELANCER: 'Client Work', BUSINESS_OWNER: 'Work Sessions', ENTREPRENEUR: 'Build Sessions', JOB_SEEKER: 'Prep Sessions', TEACHER: 'Teaching Prep' },
   },
+  // Wellness is the daily check-in (sleep, energy, stress, screen). Daily
+  // Routine stays as the longer-form log with CSV import and device sync.
+  { to: '/wellness', label: 'Wellness', icon: HeartPulse },
   { to: '/routine', label: 'Daily Routine', icon: Moon },
   { to: '/assistant', label: 'AI Assistant', icon: Bot, badge: 'AI' },
   { to: '/analytics', label: 'Analytics', icon: BarChart3 },

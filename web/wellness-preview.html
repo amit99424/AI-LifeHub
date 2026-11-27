@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AI-LifeHub · Phase 2 — Wellness inputs</title>
+<style>
+  :root {
+    --ground: #070A18;
+    --surface: #12182C;
+    --border: #262E4A;
+    --ink: #E8ECF7;
+    --muted: #98A4BE;
+    --brand: #a855f7;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font: 15px/1.55 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1020px; margin: 0 auto; padding: 40px 20px 72px; }
+  h1 { font-size: 26px; letter-spacing: -0.02em; margin: 0 0 6px; font-weight: 800; }
+  h2 { font-size: 15px; margin: 34px 0 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+  p.lede { color: var(--muted); margin: 0 0 26px; max-width: 70ch; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 18px; }
+  .grid { display: grid; gap: 12px; }
+  .g2 { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+  .g4 { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
+  label { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; margin-bottom: 6px; }
+  .unit { color: var(--muted); font-weight: 500; }
+  .hint { font-size: 11px; color: var(--muted); margin-top: 6px; }
+  input[type=number] {
+    width: 100%; height: 38px; padding: 0 12px; border-radius: 9px;
+    border: 1px solid var(--border); background: #0C1122; color: var(--ink); font-size: 14px;
+  }
+  input[type=number]:focus { outline: 2px solid rgba(168,85,247,.5); outline-offset: 1px; }
+  .scale { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+  .scale button {
+    height: 36px; border-radius: 9px; border: 1px solid var(--border); background: transparent;
+    color: var(--muted); font-weight: 700; font-size: 13px; cursor: pointer; font-variant-numeric: tabular-nums;
+  }
+  .scale button.on { background: var(--brand); border-color: #c084fc; color: #fff; }
+  .ends { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); margin-top: 4px; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .chip { font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 999px; background: rgba(168,85,247,.14); color: #d8b4fe; }
+  .stat { border: 1px solid var(--border); border-radius: 12px; padding: 12px; }
+  .stat b { display: block; font-size: 19px; font-variant-numeric: tabular-nums; }
+  .stat span { font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .btn { height: 38px; padding: 0 16px; border-radius: 9px; border: 1px solid var(--border); background: transparent; color: var(--ink); font-weight: 700; font-size: 13px; cursor: pointer; }
+  .btn.pri { background: var(--brand); border-color: #c084fc; color: #fff; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  th { font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  td.n { font-variant-numeric: tabular-nums; }
+  .muted { color: var(--muted); }
+  .note { border-left: 2px solid var(--brand); padding: 2px 0 2px 12px; color: var(--muted); font-size: 13px; margin: 12px 0 0; }
+  code { background: #0C1122; border: 1px solid var(--border); border-radius: 5px; padding: 1px 5px; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Wellness inputs — Phase 2</h1>
+  <p class="lede">
+    A live drawing of the daily wellness form, using the same controls the app renders.
+    Every field is optional, and blank means <em>not reported</em> — it is never counted as zero.
+    Click the 1–5 buttons to see the selected state.
+  </p>
+
+  <!-- ── the day form ─────────────────────────────────────── -->
+  <div class="card">
+    <div class="row" style="margin-bottom:16px">
+      <div>
+        <div style="font-weight:800;font-size:15px">How is today going?</div>
+        <div class="hint" style="margin-top:2px">Blank fields are simply not recorded. They are never counted as zero.</div>
+      </div>
+      <span class="chip" id="pct">0% filled</span>
+    </div>
+
+    <div class="grid g2">
+      <div>
+        <label>Sleep <span class="unit">(h)</span></label>
+        <input type="number" min="0" max="24" step="0.25" placeholder="—" data-key="sleepHours" />
+        <div class="hint">Hours slept last night. Count from when you actually fell asleep.</div>
+      </div>
+      <div>
+        <label>Exercise <span class="unit">(min)</span></label>
+        <input type="number" min="0" max="600" step="5" placeholder="—" data-key="exerciseMinutes" />
+        <div class="hint">Any movement that raised your heart rate.</div>
+      </div>
+      <div>
+        <label>Screen time <span class="unit">(h)</span></label>
+        <input type="number" min="0" max="24" step="0.5" placeholder="—" data-key="screenHours" />
+        <div class="hint">Non-work scrolling and watching. Best guess is fine.</div>
+      </div>
+      <div>
+        <label>Mood <span class="unit">(/5)</span></label>
+        <div class="scale" data-key="moodScore" data-ends="Low|Great"></div>
+        <div class="ends"><span>Low</span><span>Great</span></div>
+      </div>
+      <div>
+        <label>Sleep quality <span class="unit">(/5)</span></label>
+        <div class="scale" data-key="sleepQuality"></div>
+        <div class="ends"><span>Restless</span><span>Deeply rested</span></div>
+      </div>
+      <div>
+        <label>Energy <span class="unit">(/5)</span></label>
+        <div class="scale" data-key="energyLevel"></div>
+        <div class="ends"><span>Drained</span><span>Full of energy</span></div>
+      </div>
+      <div>
+        <label>Stress <span class="unit">(/5)</span></label>
+        <div class="scale" data-key="stressLevel"></div>
+        <div class="ends"><span>Calm</span><span>Overwhelmed</span></div>
+      </div>
+      <div>
+        <label>Focus <span class="unit">(/5)</span></label>
+        <div class="scale" data-key="focusLevel"></div>
+        <div class="ends"><span>Scattered</span><span>Locked in</span></div>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:18px">
+      <div class="hint" id="stateLine">Enter at least one value to save.</div>
+      <div style="display:flex;gap:8px">
+        <button class="btn" id="clear">Clear</button>
+        <button class="btn pri" id="save">Save today</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── what the data becomes ───────────────────────────── -->
+  <h2>What the entry becomes</h2>
+  <div class="grid g4" id="stats"></div>
+  <p class="note">
+    Averages are computed only from days that were actually filled in, so a missed day never drags them down.
+    This is the same rule the API follows server-side.
+  </p>
+
+  <h2>Validation, on both sides</h2>
+  <table>
+    <thead><tr><th>Input</th><th>Result</th><th>Where it is enforced</th></tr></thead>
+    <tbody>
+      <tr><td class="n">energyLevel = 9</td><td>rejected — <code>400 validation_error</code></td><td>zod schema + Postgres CHECK</td></tr>
+      <tr><td class="n">sleepHours = 30</td><td>rejected</td><td>zod schema (0–24)</td></tr>
+      <tr><td class="n">date = 2099-01-01</td><td>rejected — <code>cannot record a future date</code></td><td>route guard</td></tr>
+      <tr><td class="n">energyLevel = 3.5</td><td>rejected</td><td>integer rule</td></tr>
+      <tr><td class="n">everything blank</td><td>accepted — nothing is saved for that day</td><td>—</td></tr>
+    </tbody>
+  </table>
+  <p class="note">
+    The database also carries <code>CHECK ("energyLevel" BETWEEN 1 AND 5)</code> and the same for stress and sleep quality,
+    so a future CSV import or device sync cannot store an out-of-range value even if a route forgets to validate.
+  </p>
+
+  <h2>Historical editing</h2>
+  <p class="lede" style="margin:0">
+    The day picker steps back through the last 60 days. A day with no record opens blank rather than inheriting
+    yesterday's numbers, and saving over a day replaces its record. Rows imported from a CSV keep their
+    <code>source</code> label; only manual saves are relabelled.
+  </p>
+</div>
+
+<script>
+  const state = {};
+  const KEYS = ['sleepHours','sleepQuality','energyLevel','stressLevel','exerciseMinutes','screenHours','moodScore','focusLevel'];
+
+  // build the segmented controls
+  document.querySelectorAll('.scale').forEach((el) => {
+    const key = el.dataset.key;
+    for (let i = 1; i <= 5; i++) {
+      const b = document.createElement('button');
+      b.textContent = i;
+      b.type = 'button';
+      b.setAttribute('aria-pressed', 'false');
+      b.onclick = () => {
+        state[key] = state[key] === i ? null : i;
+        paint();
+      };
+      el.appendChild(b);
+    }
+  });
+
+  document.querySelectorAll('input[type=number]').forEach((el) => {
+    el.oninput = () => {
+      state[el.dataset.key] = el.value === '' ? null : Number(el.value);
+      paint();
+    };
+  });
+
+  document.getElementById('clear').onclick = () => {
+    for (const k of Object.keys(state)) delete state[k];
+    document.querySelectorAll('input[type=number]').forEach((e) => (e.value = ''));
+    paint();
+  };
+
+  document.getElementById('save').onclick = () => {
+    const n = KEYS.filter((k) => state[k] !== null && state[k] !== undefined).length;
+    document.getElementById('stateLine').textContent = n
+      ? `Would PUT ${n} value${n === 1 ? '' : 's'} to /api/wellness for today.`
+      : 'Enter at least one value to save.';
+  };
+
+  function paint() {
+    document.querySelectorAll('.scale').forEach((el) => {
+      const key = el.dataset.key;
+      [...el.children].forEach((b, i) => {
+        const on = state[key] === i + 1;
+        b.classList.toggle('on', on);
+        b.setAttribute('aria-pressed', String(on));
+      });
+    });
+
+    const filled = KEYS.filter((k) => state[k] !== null && state[k] !== undefined);
+    document.getElementById('pct').textContent = Math.round((filled.length / KEYS.length) * 100) + '% filled';
+
+    // averages over the values entered: the blank ones are skipped, not zeroed
+    const avg = (k) => {
+      const v = filled.filter((x) => x === k).map((x) => state[x]);
+      return v.length ? Math.round((v.reduce((a, b) => a + b, 0) / v.length) * 10) / 10 : null;
+    };
+    const stats = [
+      ['Sleep', avg('sleepHours'), 'h'],
+      ['Sleep quality', avg('sleepQuality'), '/5'],
+      ['Energy', avg('energyLevel'), '/5'],
+      ['Stress', avg('stressLevel'), '/5'],
+      ['Exercise', avg('exerciseMinutes'), 'min'],
+      ['Screen', avg('screenHours'), 'h'],
+      ['Mood', avg('moodScore'), '/5'],
+      ['Focus', avg('focusLevel'), '/5'],
+    ];
+    document.getElementById('stats').innerHTML = stats
+      .map(
+        ([label, v, unit]) =>
+          `<div class="stat"><span>${label}</span><b>${v === null ? '—' : v}<small class="muted" style="font-size:11px">${
+            v === null ? '' : unit
+          }</small></b></div>`,
+      )
+      .join('');
+  }
+
+  paint();
+</script>
+</body>
+</html>

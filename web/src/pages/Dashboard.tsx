@@ -10,6 +10,7 @@ import {
   CheckCircle2,
   Clock,
   Flame,
+  HeartPulse,
   Plus,
   Quote,
   RefreshCw,
@@ -290,6 +291,9 @@ export default function Dashboard() {
               </Link>
               <Link to="/sessions" className="btn-secondary h-9 px-3.5 text-[13px]">
                 <Timer className="h-4 w-4" /> Start focus session
+              </Link>
+              <Link to="/wellness" className="btn-secondary h-9 px-3.5 text-[13px]">
+                <HeartPulse className="h-4 w-4" /> Log wellness
               </Link>
               <Link to="/assistant" className="btn-secondary h-9 px-3.5 text-[13px]">
                 <Sparkles className="h-4 w-4" /> Ask about my week

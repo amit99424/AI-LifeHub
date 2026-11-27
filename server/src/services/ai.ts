@@ -149,7 +149,7 @@ const INSIGHT_SPECS: Record<
     label: 'Routine signals',
     needs: (f) => f.routine.daysRecorded >= 3,
     focus:
-      'Use sleep, screen time, exercise and meditation data with the derived sleepVsProductivity and screenVsProductivity tables. Describe tendencies only and suggest one small routine change.',
+      'Use sleep, screen time, exercise and meditation data with the derived sleepVsProductivity and screenVsProductivity tables. When routine.avgStress, avgEnergy or avgSleepQuality are present they were self-reported by the user on a 1-5 scale, and levelDays says how many days each covers: never generalise from fewer than three. Stress reads high when the number is high; energy and sleep quality read low when the number is low. Describe tendencies only and suggest one small routine change.',
   },
 };
 

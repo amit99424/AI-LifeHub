@@ -37,6 +37,8 @@ function day(i: number, over: Partial<LifeDay> = {}): LifeDay {
     mood: null,
     stress: null,
     focus: null,
+    energy: null,
+    sleepQuality: null,
     habitRate: null,
     tasksCompleted: null,
     tasksOverdue: null,
@@ -222,4 +224,79 @@ register('lifeEngine: the prompt block carries sample sizes and hides withheld p
   assert.match(text, /n=14/);
   assert.match(text, /do not speculate/i);
   assert.doesNotMatch(text, /causes/);
+});
+
+// ── phase 2: the self-reported wellness levels ───────────────
+
+register('lifeEngine: energy and sleep quality are correlated like any other domain', () => {
+  const days = Array.from({ length: 20 }, (_, i) => {
+    const energy = 1 + (i % 5);
+    return day(i, { energy, score: 30 + energy * 10, sleepQuality: energy, focus: energy });
+  });
+  const res = computeCorrelations(days);
+  for (const key of ['energyVsScore', 'sleepQualityVsScore', 'sleepQualityVsFocus']) {
+    const c = res.correlations.find((x) => x.key === key);
+    assert.ok(c, `${key} should be reported at n=20`);
+    assert.equal(c!.n, 20);
+    assert.ok(c!.r > 0.9, `${key} should be strongly positive, got ${c!.r}`);
+  }
+});
+
+register('lifeEngine: unreported levels are withheld, never treated as zero', () => {
+  // 20 days, but energy reported on only 4 of them.
+  const days = Array.from({ length: 20 }, (_, i) => day(i, { score: 50, energy: i < 4 ? 3 : null }));
+  const res = computeCorrelations(days);
+  assert.equal(res.correlations.find((x) => x.key === 'energyVsScore'), undefined);
+  assert.equal(res.withheld.find((x) => x.key === 'energyVsScore')!.n, 4);
+});
+
+register('lifeEngine: low energy is flagged only when it was actually reported', () => {
+  const reported = Array.from({ length: 10 }, (_, i) => day(i, { energy: 2, score: 40 }));
+  const flagged = improvementAreas(reported).find((a) => a.key === 'energy');
+  assert.ok(flagged, 'low reported energy should be flagged');
+  assert.match(flagged!.detail, /2 out of 5/);
+
+  // Same days, nothing reported: no claim may be made.
+  const silent = Array.from({ length: 10 }, (_, i) => day(i, { score: 40 }));
+  assert.equal(improvementAreas(silent).find((a) => a.key === 'energy'), undefined);
+});
+
+register('lifeEngine: a single reported day is not enough to judge energy', () => {
+  const days = Array.from({ length: 10 }, (_, i) => day(i, { energy: i === 0 ? 1 : null, score: 40 }));
+  assert.equal(improvementAreas(days).find((a) => a.key === 'energy'), undefined);
+});
+
+register('lifeEngine: period comparison includes energy and sleep quality', () => {
+  const days = Array.from({ length: 20 }, (_, i) =>
+    day(i, { score: 50, energy: i < 10 ? 2 : 4, sleepQuality: i < 10 ? 2 : 4 }),
+  );
+  const a = analyseLife({ days, hourly: [], weekday: [], domainsPresent: {} });
+  const energy = a.deltas.find((d) => d.key === 'energy')!;
+  const quality = a.deltas.find((d) => d.key === 'sleepQuality')!;
+  assert.equal(energy.direction, 'up');
+  assert.equal(energy.current, 4);
+  assert.equal(energy.previous, 2);
+  assert.equal(quality.direction, 'up');
+});
+
+register('lifeEngine: a computed score is not evidence of a tracked day', () => {
+  // 30 days in the window, nothing recorded on any of them. scoreDay still
+  // gives each a number, so the old rule reported 30 tracked days.
+  const days = Array.from({ length: 30 }, (_, i) => day(i, { score: 0 }));
+  const res = sufficiency(days, { tasks: false, habits: false });
+  assert.equal(res.daysTracked, 0);
+  assert.match(res.message, /No activity/);
+});
+
+register('lifeEngine: a thin domain is reported as thin, not as missing', () => {
+  // 30 days tracked, but tasks recorded on only 3 of them: enough for trends,
+  // not enough to compare tasks against anything.
+  const days = Array.from({ length: 30 }, (_, i) =>
+    day(i, { tasksCompleted: i < 3 ? 2 : 0, mood: 3, score: 10 }),
+  );
+  const res = sufficiency(days, { tasks: true, habits: false });
+  assert.deepEqual(res.missing, ['habits']);
+  assert.equal(res.thin.length, 1);
+  assert.match(res.thin[0], /tasks \(3 days\)/);
+  assert.match(res.message, /too few days to compare/);
 });

@@ -5,6 +5,7 @@ import { ah, validate } from '../lib/http.js';
 import { requireAuth, userTz } from '../middleware/auth.js';
 import { occupationDisplayName, resolveOccupation } from '../services/occupations.js';
 import { buildAnalytics } from '../services/analytics.js';
+import { analyseLife, type LifeDay } from '../services/lifeEngine.js';
 import { addDaysKey, endOfMonthKey, startOfMonthKey, todayKey } from '../lib/dates.js';
 
 export const analyticsRouter = Router();
@@ -73,8 +74,52 @@ analyticsRouter.get(
       where: { userId: req.user!.id, date: new Date(`${today}T00:00:00.000Z`) },
     });
 
+    // The engine reads the same daily stats the charts do, so a claim on the
+    // dashboard and a claim in the AI can never disagree.
+    const lifeDays: LifeDay[] = full.daily.map((d) => ({
+      date: d.date,
+      score: d.score,
+      sleepHours: d.wellness.sleepHours,
+      screenHours: d.wellness.screenHours,
+      exerciseMinutes: d.wellness.exerciseMinutes,
+      // Focused work and study are the same thing to the engine; a session
+      // log does not distinguish them in this window.
+      studyMinutes: d.focusMinutes,
+      mood: d.moodScore,
+      stress: d.wellness.stress,
+      focus: d.wellness.focus,
+      energy: d.wellness.energy,
+      sleepQuality: d.wellness.sleepQuality,
+      habitRate: d.habitsTotal > 0 ? Math.round((d.habitsDone / d.habitsTotal) * 100) : null,
+      tasksCompleted: d.tasksCompleted,
+      // Overdue counts are computed elsewhere; the dashboard does not need
+      // them here, and a zero would be a claim we cannot back.
+      tasksOverdue: null,
+    }));
+    const analysis = analyseLife({
+      days: lifeDays,
+      hourly: full.hourly,
+      weekday: full.weekday,
+      domainsPresent: {
+        tasks: full.totals.tasksCompleted > 0,
+        habits: full.totals.habitLogs > 0,
+        focus: full.totals.focusMinutes > 0,
+        mood: full.totals.avgMood !== null,
+        wellness: full.daily.some((d) => d.wellness.stress !== null || d.wellness.energy !== null),
+      },
+    });
+
     const now = new Date();
     res.json({
+      life: {
+        sufficiency: analysis.sufficiency,
+        correlations: analysis.correlations,
+        bestTime: analysis.bestTime,
+        deltas: analysis.deltas,
+        improvements: analysis.improvements,
+        current: analysis.current,
+        previous: analysis.previous,
+      },
       today,
       greetingName: req.user!.name.split(' ')[0],
       onboarded: profile?.onboarded ?? false,

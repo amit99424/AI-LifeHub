@@ -74,7 +74,7 @@ export function Label({ className, children, ...props }: React.LabelHTMLAttribut
   );
 }
 
-export function Field({ label, error, hint, children, className }: { label?: string; error?: string; hint?: string; children: ReactNode; className?: string }) {
+export function Field({ label, error, hint, children, className }: { label?: ReactNode; error?: string; hint?: string; children: ReactNode; className?: string }) {
   return (
     <div className={className}>
       {label && <Label>{label}</Label>}

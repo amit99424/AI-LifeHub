@@ -16,6 +16,9 @@ activityRouter.use(requireAuth);
  * entry, (b) CSV import, and (c) a documented hook for device sync. Nothing is
  * invented or auto-detected silently.
  */
+/** A 1-5 self-report, or null for "not reported". Never 0: 0 is not a value. */
+const level = z.number().int().min(1).max(5).nullable().optional();
+
 const routineSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   sleepMinutes: z.number().int().min(0).max(1440).nullable().optional(),
@@ -24,6 +27,9 @@ const routineSchema = z.object({
   meditationMinutes: z.number().int().min(0).max(1440).nullable().optional(),
   socialMinutes: z.number().int().min(0).max(1440).nullable().optional(),
   steps: z.number().int().min(0).max(200000).nullable().optional(),
+  stressLevel: level,
+  energyLevel: level,
+  sleepQuality: level,
   notes: z.string().trim().max(500).nullable().optional(),
   source: z.enum(['manual', 'csv', 'device']).default('manual'),
 });
@@ -57,6 +63,9 @@ activityRouter.get(
           screenHours: r?.screenMinutes != null ? Math.round((r.screenMinutes / 60) * 10) / 10 : null,
           exerciseMinutes: r?.exerciseMinutes ?? null,
           meditationMinutes: r?.meditationMinutes ?? null,
+          stressLevel: r?.stressLevel ?? null,
+          energyLevel: r?.energyLevel ?? null,
+          sleepQuality: r?.sleepQuality ?? null,
         };
       }),
       averages: {
@@ -65,8 +74,13 @@ activityRouter.get(
         screenMinutes: avg((r) => r.screenMinutes),
         meditationMinutes: avg((r) => r.meditationMinutes),
         socialMinutes: avg((r) => r.socialMinutes),
+        stressLevel: avg((r) => r.stressLevel),
+        energyLevel: avg((r) => r.energyLevel),
+        sleepQuality: avg((r) => r.sleepQuality),
       },
       daysLogged: rows.length,
+      /** How many of the requested days have a row at all — the empty-state input. */
+      coverage: { logged: rows.length, of: days },
     });
   }),
 );
@@ -87,6 +101,9 @@ activityRouter.put(
       meditationMinutes: body.meditationMinutes ?? null,
       socialMinutes: body.socialMinutes ?? null,
       steps: body.steps ?? null,
+      stressLevel: body.stressLevel ?? null,
+      energyLevel: body.energyLevel ?? null,
+      sleepQuality: body.sleepQuality ?? null,
       notes: body.notes ?? null,
       source: body.source,
     };
@@ -134,6 +151,8 @@ activityRouter.post(
       return Number.isFinite(v) ? Math.round(v * factor) : null;
     };
 
+    const clampLevel = (v: number | null): number | null => (v === null ? null : v >= 1 && v <= 5 ? v : null);
+
     const today = todayKey(userTz(req));
     let imported = 0;
     const errors: { line: number; message: string }[] = [];
@@ -156,6 +175,11 @@ activityRouter.post(
         meditationMinutes: num(cols, 'meditationminutes'),
         socialMinutes: num(cols, 'socialminutes'),
         steps: num(cols, 'steps'),
+        // Levels are clamped by the DB check constraint too; here we drop
+        // anything outside 1-5 rather than letting the whole row fail.
+        stressLevel: clampLevel(num(cols, 'stresslevel')),
+        energyLevel: clampLevel(num(cols, 'energylevel')),
+        sleepQuality: clampLevel(num(cols, 'sleepquality')),
         source: 'csv',
       };
       await prisma.dailyActivity.upsert({
@@ -165,6 +189,10 @@ activityRouter.post(
       });
       imported += 1;
     }
-    res.json({ imported, errors, sampleFormat: 'date,sleepHours,screenHours,exerciseMinutes,meditationMinutes,socialMinutes,steps' });
+    res.json({
+      imported,
+      errors,
+      sampleFormat: 'date,sleepHours,screenHours,exerciseMinutes,meditationMinutes,socialMinutes,steps,stressLevel,energyLevel,sleepQuality',
+    });
   }),
 );
