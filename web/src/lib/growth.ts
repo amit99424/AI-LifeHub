@@ -31,6 +31,10 @@ export function useGrowth(days = 30) {
   return useQuery({
     queryKey: ['growth', days],
     queryFn: () => api.get<{ growth: GrowthAnalysisDto }>(`/api/skills/growth/summary?days=${days}`),
+    // A 90-day window does not change between two looks at the same page, so it
+    // is not refetched on every window focus. Mutations still invalidate it.
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
   });
 }
 

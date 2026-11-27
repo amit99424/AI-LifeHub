@@ -70,6 +70,8 @@ export default function Insights() {
     queryKey: ['analytics', preset],
     queryFn: () => api.get<AnalyticsResponse>(`/api/analytics${qs({ preset })}`),
   });
+  // The growth summary is its own query so a slow skills read never blocks the
+  // charts, and so it is fetched once per window rather than per preset.
   const growthQuery = useGrowth(90);
   const growth = growthQuery.data?.growth ?? null;
 

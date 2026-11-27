@@ -131,6 +131,15 @@ export function errorHandler(err: unknown, req: Request, res: Response, _next: N
     });
   }
 
+  // Malformed request bodies never reach a route, but Express surfaces them
+  // here: a 4xx, not a 500, and never a stack trace.
+  if (err instanceof SyntaxError && (err as { status?: number }).status === 400) {
+    return res.status(400).json({ error: { code: 'bad_request', message: 'The request body was not valid JSON' } });
+  }
+  if ((err as { type?: string })?.type === 'entity.too.large') {
+    return res.status(413).json({ error: { code: 'payload_too_large', message: 'That request is too large' } });
+  }
+
   // Prisma known errors
   const anyErr = err as { code?: string; meta?: { target?: string[] } };
   if (anyErr?.code === 'P2002') {
@@ -145,8 +154,10 @@ export function errorHandler(err: unknown, req: Request, res: Response, _next: N
     return res.status(404).json({ error: { code: 'not_found', message: 'Record not found' } });
   }
 
+  // Logged server-side only, with the path but not the body: bodies can hold a
+  // journal entry, a mood note or a password. The client gets a plain message.
   // eslint-disable-next-line no-console
-  console.error(`[error] ${req.method} ${req.originalUrl}`, err);
+  console.error(`[error] ${req.method} ${req.originalUrl} user=${(req as { user?: { id?: string } }).user?.id ?? '-'}:`, err instanceof Error ? err.stack ?? err.message : err);
   return res.status(500).json({
     error: { code: 'internal_error', message: 'Something went wrong on our side' },
   });

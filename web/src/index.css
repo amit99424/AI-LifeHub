@@ -151,3 +151,64 @@
   color: rgb(var(--muted)) !important;
   font-weight: 600;
 }
+
+/* ─────────────────────────────────────────────────────────────
+   Phase 7 polish: motion, focus and print
+   ───────────────────────────────────────────────────────────── */
+
+/*
+ * Respect the system setting. Nothing here is load-bearing, so the whole
+ * animation layer can be turned off without losing a state change: the
+ * skeletons still render, they just stop shimmering.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Keyboard users get a visible ring on everything interactive, not only on
+   the shared Button, which already has one. */
+a:focus-visible,
+button:focus-visible,
+[role='tab']:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid rgb(168 85 247 / 0.65);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+/* Printing a report should print the report, not the app around it. */
+@media print {
+  .no-print,
+  nav,
+  aside,
+  header.app-header {
+    display: none !important;
+  }
+  body,
+  .app-bg {
+    background: #fff !important;
+    color: #111 !important;
+  }
+  main {
+    padding: 0 !important;
+    max-width: none !important;
+  }
+  .card,
+  [class*='rounded-'] {
+    box-shadow: none !important;
+    border-color: #d5d9e4 !important;
+    break-inside: avoid;
+  }
+  .recharts-wrapper {
+    break-inside: avoid;
+  }
+}
