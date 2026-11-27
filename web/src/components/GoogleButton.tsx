@@ -20,16 +20,48 @@ import { cn } from '@/lib/utils';
 
 type GoogleStatus = { configured: boolean; clientId: string | null };
 
-/** Cached so the button does not refetch on every mount. */
-let statusPromise: Promise<GoogleStatus> | null = null;
+/** A negative answer is only trusted for this long. */
+const NEGATIVE_TTL_MS = 60_000;
 
+let statusCache: { at: number; positive: boolean; promise: Promise<GoogleStatus> } | null = null;
+
+/**
+ * The server's Google configuration.
+ *
+ * A positive answer is cached for the life of the tab — the credentials do not
+ * change while it is open. A negative answer is cached for a minute only, and a
+ * network failure is not cached at all. Before, every failure was cached forever
+ * and rendered as "this server has no Google OAuth credentials configured", so a
+ * cold start or a blip on a server that *is* configured told the user the
+ * opposite of the truth for the rest of the session.
+ */
 export function fetchGoogleStatus(): Promise<GoogleStatus> {
-  if (!statusPromise) {
-    statusPromise = api
-      .get<GoogleStatus>('/api/auth/google/status')
-      .catch(() => ({ configured: false, clientId: null }));
+  const now = Date.now();
+  // Reuse a positive answer for the life of the tab; a negative one for a minute.
+  if (statusCache && (statusCache.positive || now - statusCache.at < NEGATIVE_TTL_MS)) {
+    return statusCache.promise;
   }
-  return statusPromise;
+  const promise = api
+    .get<GoogleStatus>('/api/auth/google/status')
+    .then((s) => {
+      if (statusCache) {
+        statusCache.positive = s.configured;
+        statusCache.at = Date.now();
+      }
+      return s;
+    })
+    .catch((err) => {
+      // A failure is not an answer about configuration, so it is not cached as one.
+      statusCache = null;
+      throw err;
+    });
+  statusCache = { at: now, positive: false, promise };
+  return promise;
+}
+
+/** Test/reset hook: forget the cached answer. */
+export function __resetGoogleStatus() {
+  statusCache = null;
 }
 
 /** Where the browser starts the flow. `next` is a path inside the SPA. */
@@ -78,11 +110,17 @@ export function GoogleButton({
   const [status, setStatus] = useState<GoogleStatus | null>(null);
   const [leaving, setLeaving] = useState(false);
 
+  const [failed, setFailed] = useState(false);
+
   useEffect(() => {
     let alive = true;
-    void fetchGoogleStatus().then((s) => {
-      if (alive) setStatus(s);
-    });
+    fetchGoogleStatus()
+      .then((s) => {
+        if (alive) setStatus(s);
+      })
+      .catch(() => {
+        if (alive) setFailed(true);
+      });
     return () => {
       alive = false;
     };
@@ -99,6 +137,19 @@ export function GoogleButton({
         />
       );
     }
+    if (failed) {
+      return (
+        <div
+          role="status"
+          className="rounded-[13px] border border-white/15 bg-white/[0.06] px-4 py-3.5 text-[12.5px] leading-relaxed text-ink-200"
+        >
+          <p className="font-semibold text-ink-100">Could not reach the sign-in service.</p>
+          <p className="mt-1 text-ink-300">
+            The server did not answer, so Google sign-in cannot be checked right now. Reload the page to try again.
+          </p>
+        </div>
+      );
+    }
     return (
       <div
         role="status"
@@ -106,10 +157,11 @@ export function GoogleButton({
       >
         <p className="font-semibold">Google sign-in is not available right now.</p>
         <p className="mt-1 text-amber-100/70">
-          This server has no Google OAuth credentials configured, so accounts cannot be created or opened. If you run
+          This server reports no Google OAuth credentials, so accounts cannot be created or opened. If you run
           AI-LifeHub yourself, set <code className="font-mono text-[11px]">GOOGLE_CLIENT_ID</code>,{' '}
           <code className="font-mono text-[11px]">GOOGLE_CLIENT_SECRET</code> and{' '}
-          <code className="font-mono text-[11px]">GOOGLE_REDIRECT_URI</code> on the backend.
+          <code className="font-mono text-[11px]">GOOGLE_REDIRECT_URI</code> on the backend, then check{' '}
+          <code className="font-mono text-[11px]">/api/health</code> to see which one the server is missing.
         </p>
       </div>
     );

@@ -51,7 +51,13 @@ export default function Settings() {
     primaryMethod?: 'google_only' | 'google_and_password';
   };
   const methods = useQuery({ queryKey: ['auth-methods'], queryFn: () => api.get<Methods>('/api/auth/methods') });
-  const googleStatus = useQuery({ queryKey: ['google-status'], queryFn: fetchGoogleStatus });
+  const googleStatus = useQuery({
+    queryKey: ['google-status'],
+    queryFn: fetchGoogleStatus,
+    // A negative answer may only mean the server was cold; ask again sooner.
+    staleTime: 60_000,
+    retry: 1,
+  });
 
   const sessions = useQuery({ queryKey: ['sessions-list'], queryFn: () => api.get<{ sessions: { id: string; userAgent: string | null; ip: string | null; createdAt: string; lastSeenAt: string; current: boolean }[] }>('/api/auth/sessions') });
 
@@ -350,7 +356,11 @@ export default function Settings() {
                     </p>
                   ) : (
                     <p className="text-[10px] text-ink-400">
-                      {googleStatus.data?.configured ? 'Not connected yet — sign in with Google to connect it' : 'Google sign-in is not configured on this server'}
+                      {googleStatus.isError
+                        ? 'Could not reach the server to check Google sign-in'
+                        : googleStatus.data?.configured
+                          ? 'Not connected yet — sign in with Google to connect it'
+                          : 'This server reports no Google OAuth credentials'}
                     </p>
                   )}
                 </div>

@@ -144,7 +144,18 @@ export function createApp() {
       dbError = (err as Error).message?.slice(0, 200);
     }
     const ai = aiStatus();
-    const google = { configured: config.googleConfigured };
+    // Presence flags only — enough to tell "the variable never reached this
+    // process" apart from "it arrived and is being rejected", without ever
+    // exposing a value. Safe on a public endpoint because it reveals nothing
+    // beyond which of three well-known names is empty.
+    const google = {
+      configured: config.googleConfigured,
+      present: {
+        clientId: config.GOOGLE_CLIENT_ID !== '',
+        clientSecret: config.GOOGLE_CLIENT_SECRET !== '',
+        redirectUri: config.GOOGLE_REDIRECT_URI !== '',
+      },
+    };
     const ready = db === 'up';
     res.status(ready ? 200 : 503).json({
       ok: ready,

@@ -183,6 +183,35 @@ function load(): AppConfig {
     }
   }
 
+  // ── Boot diagnostics ─────────────────────────────────────────
+  // Presence only: whether each variable arrived, how long it is, and whether it
+  // had to be trimmed. Never the value itself. This is the difference between
+  // "the dashboard says it is set" and "this process received it", which is the
+  // question every "credentials not configured" report actually asks.
+  if (!isTest) {
+    const names = [
+      'GOOGLE_CLIENT_ID',
+      'GOOGLE_CLIENT_SECRET',
+      'GOOGLE_REDIRECT_URI',
+      'GOOGLE_SUCCESS_REDIRECT',
+      'GOOGLE_FAILURE_REDIRECT',
+      'DATABASE_URL',
+      'JWT_ACCESS_SECRET',
+      'JWT_REFRESH_SECRET',
+      'APP_URL',
+      'CORS_ORIGINS',
+    ] as const;
+    const report = names.map((n) => {
+      const raw = process.env[n];
+      const trimmed = (raw ?? '').trim();
+      const state = raw === undefined ? 'absent' : trimmed === '' ? 'empty' : 'set';
+      const padded = raw !== undefined && raw !== trimmed ? ' (had surrounding whitespace)' : '';
+      return `${n}=${state}${state === 'set' ? ` len=${trimmed.length}${padded}` : ''}`;
+    });
+    // eslint-disable-next-line no-console
+    console.log(`[config] env ${report.join(' ')}`);
+  }
+
   const googleConfigured = Boolean(e.GOOGLE_CLIENT_ID && e.GOOGLE_CLIENT_SECRET && e.GOOGLE_REDIRECT_URI);
   const appUrl = e.APP_URL.replace(/\/$/, '');
   const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//.test(e.GOOGLE_REDIRECT_URI);
@@ -192,6 +221,28 @@ function load(): AppConfig {
     // eslint-disable-next-line no-console
     console.error('[config] GOOGLE_REDIRECT_URI must be an https:// URL (http is allowed only for localhost).');
     process.exit(1);
+  }
+
+  if (!isTest) {
+    const missing = [
+      ['GOOGLE_CLIENT_ID', e.GOOGLE_CLIENT_ID],
+      ['GOOGLE_CLIENT_SECRET', e.GOOGLE_CLIENT_SECRET],
+      ['GOOGLE_REDIRECT_URI', e.GOOGLE_REDIRECT_URI],
+    ]
+      .filter(([, v]) => !v)
+      .map(([k]) => k);
+    // eslint-disable-next-line no-console
+    console.log(
+      missing.length
+        ? `[config] google OAuth DISABLED - missing: ${missing.join(', ')}`
+        : `[config] google OAuth enabled - redirect_uri host=${((): string => {
+            try {
+              return new URL(e.GOOGLE_REDIRECT_URI).host;
+            } catch {
+              return '(not a valid URL)';
+            }
+          })()}`,
+    );
   }
 
   return {
