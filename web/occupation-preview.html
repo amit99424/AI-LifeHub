@@ -1,0 +1,101 @@
+<!doctype html><meta charset="utf-8"><title>AI-LifeHub — occupation profiles</title>
+<style>
+ :root{--bg:#070A18;--surface:#12182C;--line:rgba(255,255,255,.09);--text:#fff;--muted:rgba(255,255,255,.55);--brand:#a855f7}
+ *{box-sizing:border-box}
+ body{margin:0;background:var(--bg);color:var(--text);font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+ .wrap{max-width:1180px;margin:0 auto;padding:32px 22px 56px}
+ h1{font-size:22px;font-weight:800;letter-spacing:-.02em;margin:0}
+ .sub{color:var(--muted);font-size:13px;margin:6px 0 0;line-height:1.6;max-width:70ch}
+ .grid{display:grid;gap:14px;margin-top:26px;grid-template-columns:repeat(auto-fill,minmax(300px,1fr))}
+ .card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px}
+ .hd{display:flex;gap:10px;align-items:flex-start}
+ .tile{width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;background:rgba(168,85,247,.16);color:#d8b4fe;flex:none;font-size:15px}
+ .name{font-weight:750;font-size:14px}
+ .desc{color:var(--muted);font-size:12px;margin-top:2px;line-height:1.45}
+ .lbl{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.4);margin:14px 0 6px}
+ .chips{display:flex;flex-wrap:wrap;gap:5px}
+ .chip{font-size:11px;padding:3px 8px;border-radius:999px;border:1px solid var(--line);color:rgba(255,255,255,.75)}
+ .chip.b{background:rgba(168,85,247,.14);border-color:rgba(168,85,247,.45);color:#e9d5ff}
+ .nouns{display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11.5px;color:var(--muted)}
+ .nouns b{color:#fff;font-weight:650}
+ .focus{font-size:11.5px;color:rgba(255,255,255,.62);line-height:1.5}
+ .bill{display:inline-block;margin-top:10px;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#38bdf8;border:1px solid rgba(56,189,248,.4);border-radius:999px;padding:2px 8px}
+</style>
+<div class="wrap">
+ <h1>Occupation profiles</h1>
+ <p class="sub">The eight types, exactly as <code>server/src/services/occupations.ts</code> defines them. A profile changes vocabulary and starting setup; it never changes the data model, so every occupation keeps the same life dashboard underneath.</p>
+ <div class="grid" id="grid"></div>
+</div>
+<script>
+const PROFILES = [
+ {t:'STUDENT',label:'Student',icon:'🎓',desc:'Subjects, assignments and exam preparation.',
+  nouns:{project:'Subject',session:'Study session',sessionLabel:'Subject'},
+  cats:['Assignment','Exam prep','Reading','Lab work','Project','Revision'],
+  habits:['Study 2 hours','Revise notes','Sleep before 11pm'],
+  widgets:['today','focus','tasks','habits','deadlines','score','mood','insight','week','wellness'],
+  focus:'academic load, exam readiness, revision spacing and the balance between study hours and rest'},
+ {t:'WORKING_PROFESSIONAL',label:'Working professional',icon:'💼',desc:'Work projects, deadlines and a life outside them.',
+  nouns:{project:'Project',session:'Work session',sessionLabel:'Project'},
+  cats:['Work','Meetings','Deep work','Admin','Learning','Personal'],
+  habits:['Plan tomorrow','No work after 7pm','Walk 20 minutes'],
+  widgets:['today','tasks','focus','score','deadlines','habits','wellness','mood','insight','week'],
+  focus:'workload against deadlines, meeting load, focus blocks and signs of work bleeding into rest'},
+ {t:'FREELANCER',label:'Freelancer',icon:'💻',desc:'Client projects, deadlines and billable hours.',billable:true,
+  nouns:{project:'Client project',session:'Work session',sessionLabel:'Client'},
+  cats:['Client work','Prospecting','Admin','Invoicing','Portfolio','Learning'],
+  habits:['Send one outreach','Log billable hours','Write journal'],
+  widgets:['today','focus','tasks','deadlines','score','habits','week','insight','mood','wellness'],
+  focus:'billable hours against time spent, deadline risk across clients, and the gap between busy and productive'},
+ {t:'BUSINESS_OWNER',label:'Business owner',icon:'🏪',desc:'Operations, priorities and the health of the business.',
+  nouns:{project:'Initiative',session:'Work session',sessionLabel:'Area'},
+  cats:['Operations','Finance','Team','Sales','Growth','Admin'],
+  habits:['Review the numbers','One growth action','Sleep before 11pm'],
+  widgets:['today','score','tasks','deadlines','week','focus','habits','insight','wellness','mood'],
+  focus:'where your attention is going versus what moves the business, delegation load, and personal recovery'},
+ {t:'ENTREPRENEUR',label:'Entrepreneur',icon:'🚀',desc:'Building something new, one priority at a time.',
+  nouns:{project:'Venture',session:'Build session',sessionLabel:'Venture'},
+  cats:['Build','Validate','Talk to users','Fundraising','Growth','Admin'],
+  habits:['Talk to one user','Ship something small','Drink 3L water'],
+  widgets:['today','tasks','focus','score','insight','deadlines','habits','week','mood','wellness'],
+  focus:'whether effort is going to validated work, context switching between ventures, and burnout risk from long hours'},
+ {t:'JOB_SEEKER',label:'Job seeker',icon:'🔍',desc:'Applications, interviews and keeping momentum.',
+  nouns:{project:'Application',session:'Prep session',sessionLabel:'Role'},
+  cats:['Application','Interview prep','Networking','Skill practice','Portfolio','Follow-up'],
+  habits:['One application a day','Practice 30 minutes','Walk 20 minutes'],
+  widgets:['today','tasks','habits','score','focus','deadlines','insight','mood','week','wellness'],
+  focus:'application volume and consistency, interview preparation, momentum through rejections and mood over time'},
+ {t:'TEACHER',label:'Teacher',icon:'📋',desc:'Lessons, marking and the energy it takes.',
+  nouns:{project:'Course',session:'Teaching prep',sessionLabel:'Course'},
+  cats:['Lesson prep','Marking','Classes','Admin','Student support','Planning'],
+  habits:['Prep tomorrow','Leave work at work','Write journal'],
+  widgets:['today','tasks','focus','habits','score','wellness','deadlines','mood','insight','week'],
+  focus:'preparation load, marking backlog, and how term-time pressure affects sleep and recovery'},
+ {t:'OTHER',label:'Something else',icon:'👥',desc:'Tell us what you do and we will use your words.',
+  nouns:{project:'Project',session:'Session',sessionLabel:'Area'},
+  cats:['Work','Personal','Learning','Health','Admin','Other'],
+  habits:['Sleep before 11pm','Walk 20 minutes','Drink 3L water'],
+  widgets:['today','tasks','habits','score','focus','mood','deadlines','week','wellness','insight'],
+  focus:'the balance across your tasks, habits, focus, mood and sleep'}
+];
+document.getElementById('grid').innerHTML = PROFILES.map(p => `
+ <div class="card">
+  <div class="hd">
+   <div class="tile">${p.icon}</div>
+   <div><div class="name">${p.label}</div><div class="desc">${p.desc}</div></div>
+  </div>
+  <div class="lbl">Vocabulary</div>
+  <div class="nouns">
+   <div>Project → <b>${p.nouns.project}</b></div>
+   <div>Session → <b>${p.nouns.session}</b></div>
+  </div>
+  <div class="lbl">Task categories</div>
+  <div class="chips">${p.cats.map(c => `<span class="chip b">${c}</span>`).join('')}</div>
+  <div class="lbl">Starter habits</div>
+  <div class="chips">${p.habits.map(h => `<span class="chip">${h}</span>`).join('')}</div>
+  <div class="lbl">Widget order</div>
+  <div class="chips">${p.widgets.map(w => `<span class="chip">${w}</span>`).join('')}</div>
+  <div class="lbl">AI focus</div>
+  <div class="focus">${p.focus}</div>
+  ${p.billable ? '<div class="bill">billable hours</div>' : ''}
+ </div>`).join('');
+</script>

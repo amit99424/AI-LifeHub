@@ -7,6 +7,7 @@
  */
 import { InsightType, type JournalEntry } from '@prisma/client';
 import { prisma } from '../lib/prisma.js';
+import { aiFocusLine, occupationDisplayName, resolveOccupation } from './occupations.js';
 import { collectActivityData, truncate } from './collector.js';
 import { compactFeatures, computeFeatures, type FeatureBundle } from './features.js';
 import { AIUnconfiguredError, complete, estimateTokens, parseJsonLoose, truncateToTokens, type LLMMessage } from './llm.js';
@@ -67,6 +68,30 @@ export async function buildFeatureBundle(userId: string, tz: string, windowDays:
   const data = await collectActivityData(userId, { from, to, tz });
   const features = computeFeatures(data, { from, to, tz, todayKey: today });
   return { features, data, today, fromKey };
+}
+
+/**
+ * The occupation context injected into every prompt. This is the whole point
+ * of phase 1: the same data should be read through the user's own vocabulary,
+ * so a student hears about subjects and revision and a freelancer hears about
+ * clients and billable hours.
+ *
+ * Reads the typed column first, falls back to classifying the legacy free text,
+ * and never fails — a missing profile just yields an empty line.
+ */
+async function occupationContext(userId: string): Promise<string> {
+  const [profile, label] = await Promise.all([
+    prisma.profile.findUnique({ where: { userId }, select: { occupation: true, occupationType: true } }),
+    prisma.occupationLabel.findUnique({ where: { userId }, select: { label: true } }),
+  ]);
+  if (!profile && !label) return '';
+  const resolved = resolveOccupation({
+    occupationType: profile?.occupationType ?? null,
+    occupation: profile?.occupation ?? null,
+    customLabel: label?.label ?? null,
+  });
+  if (resolved.source === 'default' && !label?.label) return '';
+  return `\nUSER CONTEXT: ${aiFocusLine(resolved.profile, label?.label)} The default task categories for this person are: ${resolved.profile.taskCategories.join(', ')}.`;
 }
 
 const BASE_SYSTEM = `You are the analysis engine inside AI-LifeHub, a personal productivity companion.
@@ -159,7 +184,10 @@ export async function generateInsight(
   opts: { windowDays?: number; tz: string; force?: boolean },
 ): Promise<GeneratedInsight | { skipped: string }> {
   const windowDays = opts.windowDays ?? (type === 'WEEKLY_SUMMARY' ? 7 : 30);
-  const { features } = await buildFeatureBundle(userId, opts.tz, windowDays);
+  const [{ features }, occupationBlock] = await Promise.all([
+    buildFeatureBundle(userId, opts.tz, windowDays),
+    occupationContext(userId),
+  ]);
 
   if (type !== 'WEEKLY_SUMMARY') {
     const spec = INSIGHT_SPECS[type];
@@ -194,7 +222,7 @@ export async function generateInsight(
     { role: 'system', content: `${BASE_SYSTEM}\n\nReturn ONLY JSON: {"title": string (max 60 chars), "body": string (2-4 sentences, max 90 words), "recommendations": string[] (2-3 items, each max 20 words, imperative)}.` },
     {
       role: 'user',
-      content: `TASK: ${focus}\n\nWINDOW: ${windowLabel(features)}\n\nDATA (computed from the user's real records):\n${dataBlock}`,
+      content: `TASK: ${focus}${occupationBlock}\n\nWINDOW: ${windowLabel(features)}\n\nDATA (computed from the user's real records):\n${dataBlock}`,
     },
   ];
 
@@ -337,7 +365,10 @@ export async function askAssistant(
   opts: { tz: string; history: { role: 'user' | 'assistant'; content: string }[]; question: string; windowDays?: number },
 ) {
   const windowDays = opts.windowDays ?? 30;
-  const { features } = await buildFeatureBundle(userId, opts.tz, windowDays);
+  const [{ features }, occupationBlock] = await Promise.all([
+    buildFeatureBundle(userId, opts.tz, windowDays),
+    occupationContext(userId),
+  ]);
   const dataBlock = truncateToTokens(compactFeatures(features), config.AI_MAX_CONTEXT_TOKENS);
 
   const availabilityNote = features.availability.sufficientForPatterns
@@ -353,7 +384,7 @@ You are the user's personal productivity assistant inside AI-LifeHub. Answer the
 
 DATA WINDOW: ${windowLabel(features)}
 DATA:
-${dataBlock}${availabilityNote}`,
+${dataBlock}${availabilityNote}${occupationBlock}`,
     },
     ...opts.history.slice(-8).map((m) => ({ role: m.role, content: truncate(m.content, 1500) }) as LLMMessage),
     { role: 'user', content: opts.question },

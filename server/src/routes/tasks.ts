@@ -5,6 +5,7 @@ import { prisma } from '../lib/prisma.js';
 import { ApiError, ah, validate } from '../lib/http.js';
 import { requireAuth, userTz } from '../middleware/auth.js';
 import { dateKey, localDateKey, todayKey } from '../lib/dates.js';
+import { resolveOccupation } from '../services/occupations.js';
 
 export const tasksRouter = Router();
 tasksRouter.use(requireAuth);
@@ -15,7 +16,9 @@ const statusEnum = z.nativeEnum(TaskStatus);
 const createSchema = z.object({
   title: z.string().trim().min(1, 'Give the task a title').max(200),
   description: z.string().trim().max(4000).nullable().optional(),
-  category: z.string().trim().max(40).default('General'),
+  // The default comes from the user's occupation profile (e.g. "Assignment"
+  // for a student), resolved in the handler. "General" stays the fallback.
+  category: z.string().trim().max(40).optional(),
   priority: priorityEnum.default('MEDIUM'),
   status: statusEnum.default('TODO'),
   dueDate: z.string().datetime({ offset: true }).or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).nullable().optional(),
@@ -142,12 +145,26 @@ tasksRouter.post(
     const body = req.body as z.infer<typeof createSchema>;
     const tz = userTz(req);
     const now = new Date();
+    // No category chosen: use the first one this person's occupation suggests
+    // rather than a generic "General" that means nothing to a student.
+    let category = body.category;
+    if (!category) {
+      const profile = await prisma.profile.findUnique({
+        where: { userId: req.user!.id },
+        select: { occupation: true, occupationType: true },
+      });
+      const resolved = resolveOccupation({
+        occupationType: profile?.occupationType ?? null,
+        occupation: profile?.occupation ?? null,
+      });
+      category = resolved.profile.taskCategories[0] ?? 'General';
+    }
     const task = await prisma.task.create({
       data: {
         userId: req.user!.id,
         title: body.title,
         description: body.description ?? null,
-        category: body.category,
+        category,
         priority: body.priority,
         status: body.status,
         dueDate: parseDue(body.dueDate, tz),

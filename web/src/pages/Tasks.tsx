@@ -17,6 +17,7 @@ import { api, qs } from '@/lib/api';
 import type { Priority, Task, TaskStatus, TasksResponse } from '@/lib/types';
 import { Badge, Button, Card, EmptyState, ErrorState, Field, Input, Modal, Select, Skeleton, Textarea, toast } from '@/components/ui';
 import { PRIORITY_STYLES, STATUS_STYLES, cn, formatDate, formatMinutes, relativeTime } from '@/lib/utils';
+import { useOccupation } from '@/lib/occupation';
 
 const PRIORITIES: Priority[] = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'];
 const STATUSES: { value: TaskStatus | 'ALL' | 'OPEN'; label: string }[] = [
@@ -38,13 +39,17 @@ type FormState = {
   dueDate: string;
 };
 
-const EMPTY: FormState = { title: '', description: '', category: 'General', priority: 'MEDIUM', status: 'TODO', dueDate: '' };
+const EMPTY: FormState = { title: '', description: '', category: '', priority: 'MEDIUM', status: 'TODO', dueDate: '' };
+
+/** Fallback category when the occupation is not known yet. */
+const FALLBACK_CATEGORY = 'General';
 
 export default function Tasks() {
   const qc = useQueryClient();
   const [filters, setFilters] = useState({ status: 'OPEN' as string, priority: '', category: '', search: '', due: '', sort: 'dueDate' });
   const [showFilters, setShowFilters] = useState(false);
   const [modal, setModal] = useState<FormState | null>(null);
+
   const [deleting, setDeleting] = useState<Task | null>(null);
   const [quick, setQuick] = useState('');
 
@@ -68,6 +73,18 @@ export default function Tasks() {
     queryKey: ['task-categories'],
     queryFn: () => api.get<{ categories: { category: string; count: number }[] }>('/api/tasks/meta/categories'),
   });
+
+  // The category picker is the most visible place personalisation has to show
+  // up: a student should be offered Assignment and Exam prep, a freelancer
+  // Client work and Invoicing. The profile is the source; the user's own past
+  // categories are merged in so nothing they invented disappears.
+  const occupation = useOccupation();
+  const profileCategories = occupation.data?.occupation.profile.taskCategories ?? [];
+  const defaultCategory = profileCategories[0] ?? FALLBACK_CATEGORY;
+  const categoryOptions = useMemo(() => {
+    const used = (categories.data?.categories ?? []).map((c) => c.category);
+    return [...new Set([...profileCategories, ...used])];
+  }, [profileCategories, categories.data]);
 
   const invalidate = () => {
     void qc.invalidateQueries({ queryKey: ['tasks'] });
@@ -148,7 +165,10 @@ export default function Tasks() {
   });
 
   const quickAdd = useMutation({
-    mutationFn: (title: string) => api.post<Task>('/api/tasks', { title, category: 'General', priority: 'MEDIUM' }),
+    // No category is sent: the server fills in the first one this person's
+    // occupation suggests, so a student's quick-added task lands in
+    // "Assignment" and not a generic bucket.
+    mutationFn: (title: string) => api.post<Task>('/api/tasks', { title, priority: 'MEDIUM' }),
     onMutate: async (title: string) => {
       await qc.cancelQueries({ queryKey: ['tasks'] });
       const snapshots = qc.getQueriesData<TasksResponse>({ queryKey: ['tasks'] });
@@ -156,7 +176,7 @@ export default function Tasks() {
         id: `optimistic-${Date.now()}`,
         title,
         description: null,
-        category: 'General',
+        category: defaultCategory,
         priority: 'MEDIUM',
         status: 'TODO',
         dueDate: null,
@@ -212,7 +232,7 @@ export default function Tasks() {
     const body = {
       title: modal.title.trim(),
       description: modal.description.trim() || null,
-      category: modal.category.trim() || 'General',
+      category: modal.category.trim() || defaultCategory,
       priority: modal.priority,
       status: modal.status,
       dueDate: modal.dueDate || null,
@@ -236,7 +256,7 @@ export default function Tasks() {
           <Button variant="secondary" size="sm" onClick={() => setShowFilters((v) => !v)} icon={<Filter className="h-3.5 w-3.5" />}>
             Filters{activeFilterCount ? ` (${activeFilterCount})` : ''}
           </Button>
-          <Button size="sm" onClick={() => setModal({ ...EMPTY })} icon={<Plus className="h-4 w-4" />}>
+          <Button size="sm" onClick={() => setModal({ ...EMPTY, category: defaultCategory })} icon={<Plus className="h-4 w-4" />}>
             New task
           </Button>
         </div>
@@ -343,7 +363,7 @@ export default function Tasks() {
               ? 'Try clearing the filters, or create a task that matches them.'
               : 'Add your first task above. Completion dates, due dates and time-to-complete are recorded automatically for analysis.'
           }
-          action={<Button size="sm" onClick={() => setModal({ ...EMPTY })} icon={<Plus className="h-3.5 w-3.5" />}>New task</Button>}
+          action={<Button size="sm" onClick={() => setModal({ ...EMPTY, category: defaultCategory })} icon={<Plus className="h-3.5 w-3.5" />}>New task</Button>}
         />
       ) : (
         <div className="space-y-5">
@@ -387,10 +407,15 @@ export default function Tasks() {
             </Field>
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Category">
-                <Input value={modal.category} onChange={(e) => setModal({ ...modal, category: e.target.value })} placeholder="Work, Study, Personal…" list="task-categories" />
+                <Input
+                  value={modal.category}
+                  onChange={(e) => setModal({ ...modal, category: e.target.value })}
+                  placeholder={categoryOptions.slice(0, 3).join(', ') || 'Work, Personal…'}
+                  list="task-categories"
+                />
                 <datalist id="task-categories">
-                  {(categories.data?.categories ?? []).map((c) => (
-                    <option key={c.category} value={c.category} />
+                  {categoryOptions.map((c) => (
+                    <option key={c} value={c} />
                   ))}
                 </datalist>
               </Field>

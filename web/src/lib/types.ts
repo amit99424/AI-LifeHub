@@ -272,8 +272,46 @@ export interface AnalyticsResponse {
   weekday: { day: string; completions: number; focusMinutes: number }[];
 }
 
+export type OccupationType =
+  | 'STUDENT'
+  | 'WORKING_PROFESSIONAL'
+  | 'FREELANCER'
+  | 'BUSINESS_OWNER'
+  | 'ENTREPRENEUR'
+  | 'JOB_SEEKER'
+  | 'TEACHER'
+  | 'OTHER';
+
+export type WidgetId =
+  | 'today' | 'score' | 'tasks' | 'habits' | 'focus'
+  | 'mood' | 'wellness' | 'deadlines' | 'insight' | 'week';
+
+export interface OccupationProfile {
+  type: OccupationType;
+  label: string;
+  description: string;
+  icon: string;
+  nouns: { project: string; projects: string; session: string; sessions: string; sessionLabel: string };
+  taskCategories: string[];
+  suggestedHabits: string[];
+  widgets: WidgetId[];
+  aiFocus: string;
+  billableHours: boolean;
+}
+
+export interface ResolvedOccupation {
+  type: OccupationType;
+  profile: OccupationProfile;
+  /** 'typed' = the user chose it; 'classified' = we guessed from old text; 'default' = nothing known. */
+  source: 'typed' | 'classified' | 'default';
+  displayName: string;
+  needsConfirmation: boolean;
+  customLabel?: string | null;
+}
+
 export interface DashboardResponse {
   today: string;
+  occupation: ResolvedOccupation;
   greetingName: string;
   onboarded: boolean;
   primaryGoal: string | null;

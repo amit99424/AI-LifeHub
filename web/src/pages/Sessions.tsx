@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { BarChart, Bar, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { CircleDot, Clock, Pause, Play, Plus, Square, Timer, Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { useNouns } from '@/lib/occupation';
 import type { SessionCategory, SessionsResponse } from '@/lib/types';
 import { Badge, Button, Card, CardHeader, EmptyState, ErrorState, Field, Input, Modal, Select, Skeleton, toast } from '@/components/ui';
 import { CATEGORY_META, cn, formatClock, formatDate, formatMinutes, relativeTime } from '@/lib/utils';
@@ -18,6 +19,7 @@ export default function Sessions() {
   const [starting, setStarting] = useState(false);
   const [startForm, setStartForm] = useState<{ category: SessionCategory; label: string }>({ category: 'STUDYING', label: '' });
 
+  const nouns = useNouns();
   const query = useQuery({ queryKey: ['sessions'], queryFn: () => api.get<SessionsResponse>('/api/sessions?days=30') });
 
   // live ticker for the running session
@@ -79,7 +81,7 @@ export default function Sessions() {
     <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="font-display text-xl font-extrabold tracking-tight text-ink-900 dark:text-white">Study and work sessions</h1>
+          <h1 className="font-display text-xl font-extrabold tracking-tight text-ink-900 dark:text-white">{nouns.sessions}</h1>
           <p className="mt-0.5 text-xs text-ink-500">Start the timer, work, stop. Duration is recorded automatically — no manual hours.</p>
         </div>
         <Button size="sm" variant="secondary" onClick={() => setManual({ category: 'STUDYING', minutes: 45, label: '', date: new Date().toISOString().slice(0, 10) })} icon={<Plus className="h-4 w-4" />}>

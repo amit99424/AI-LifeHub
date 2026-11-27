@@ -3,7 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Check, Database, Download, KeyRound, Link2, LogOut, Monitor, Moon, Palette, Save, Shield, ShieldCheck, Sparkles, Sun, Trash2, User } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth, useProfile, useTheme, useUpdateProfile, useUpdateSettings, type ThemeMode } from '@/lib/auth';
-import type { AiStatus } from '@/lib/types';
+import type { AiStatus, OccupationType } from '@/lib/types';
+import { useOccupation } from '@/lib/occupation';
 import { Badge, Button, Card, CardHeader, Field, Input, Modal, Select, Skeleton, Textarea, toast } from '@/components/ui';
 import { cn, formatDate, relativeTime } from '@/lib/utils';
 import { fetchGoogleStatus, googleStartUrl } from '@/components/GoogleButton';
@@ -31,6 +32,9 @@ export default function Settings() {
   const updateSettings = useUpdateSettings();
 
   const [form, setForm] = useState({ name: '', occupation: '', primaryGoal: '', timezone: 'UTC', weekStart: 1, bio: '' });
+  const occupationQuery = useOccupation();
+  const [occupationType, setOccupationType] = useState<OccupationType>('OTHER');
+  const [customLabel, setCustomLabel] = useState('');
   const [demoModal, setDemoModal] = useState(false);
   const [deleteModal, setDeleteModal] = useState(false);
   const [deleteText, setDeleteText] = useState('');
@@ -64,9 +68,37 @@ export default function Settings() {
     });
   }, [profile.data]);
 
+  // Hydrate the typed occupation separately: it comes from its own endpoint so
+  // the source (typed / classified / default) travels with it.
+  useEffect(() => {
+    const o = occupationQuery.data?.occupation;
+    if (!o) return;
+    setOccupationType(o.type);
+    // For OTHER, keep whatever words they gave; otherwise the field is unused.
+    setCustomLabel(o.customLabel ?? '');
+  }, [occupationQuery.data]);
+
   const saveProfile = useMutation({
-    mutationFn: () => updateProfile.mutateAsync({ ...form, occupation: form.occupation || null, primaryGoal: form.primaryGoal || null, bio: form.bio || null }),
-    onSuccess: () => toast('Profile updated.', 'success'),
+    mutationFn: async () => {
+      // Occupation has its own endpoint so the typed value and the person's own
+      // words are written together, in one transaction, and never overwrite
+      // each other.
+      await api.put('/api/users/occupation', {
+        occupationType,
+        customLabel: occupationType === 'OTHER' ? customLabel.trim() || null : null,
+      });
+      return updateProfile.mutateAsync({
+        ...form,
+        occupation: undefined,
+        primaryGoal: form.primaryGoal || null,
+        bio: form.bio || null,
+      });
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['occupation'] });
+      void qc.invalidateQueries({ queryKey: ['dashboard'] });
+      toast('Profile updated.', 'success');
+    },
     onError: (e) => toast((e as Error).message, 'error'),
   });
 
@@ -154,9 +186,28 @@ export default function Settings() {
                 <Field label="Email" hint="Contact support to change your sign-in email.">
                   <Input value={user?.email ?? ''} disabled />
                 </Field>
-                <Field label="Occupation">
-                  <Input value={form.occupation} onChange={(e) => setForm({ ...form, occupation: e.target.value })} placeholder="Student, Engineer…" />
+                <Field label="Occupation" hint="Changes the words and starting setup across the app.">
+                  <Select
+                    value={occupationType}
+                    onChange={(e) => setOccupationType(e.target.value as OccupationType)}
+                  >
+                    {(occupationQuery.data?.options ?? []).map((o) => (
+                      <option key={o.type} value={o.type}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </Select>
                 </Field>
+                {occupationType === 'OTHER' && (
+                  <Field label="What do you do?" className="sm:col-span-2">
+                    <Input
+                      value={customLabel}
+                      maxLength={80}
+                      placeholder="e.g. Medical student, Farmer, Chef"
+                      onChange={(e) => setCustomLabel(e.target.value)}
+                    />
+                  </Field>
+                )}
                 <Field label="Primary goal">
                   <Input value={form.primaryGoal} onChange={(e) => setForm({ ...form, primaryGoal: e.target.value })} placeholder="Build consistency" />
                 </Field>

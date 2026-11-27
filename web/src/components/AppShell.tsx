@@ -25,14 +25,25 @@ import { useAuth, useTheme } from '@/lib/auth';
 import { cn, initials, formatDate } from '@/lib/utils';
 import { Logo as Logo_ } from '@/components/Logo';
 import { api } from '@/lib/api';
+import { useOccupation } from '@/lib/occupation';
+import type { OccupationType } from '@/lib/types';
+import type { LucideIcon } from 'lucide-react';
 
-const NAV = [
+type NavItem = { to: string; label: string; icon: LucideIcon; badge?: string; labelFor?: Partial<Record<OccupationType, string>> };
+
+const NAV: NavItem[] = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/tasks', label: 'My Tasks', icon: CalendarCheck },
   { to: '/habits', label: 'Habits', icon: Activity },
   { to: '/mood', label: 'Mood Tracker', icon: Smile },
   { to: '/journal', label: 'Journal', icon: BookOpen },
-  { to: '/sessions', label: 'Study Sessions', icon: Timer },
+  // A student studies; almost everyone else works. Same page, honest name.
+  {
+    to: '/sessions',
+    label: 'Study Sessions',
+    icon: Timer,
+    labelFor: { WORKING_PROFESSIONAL: 'Work Sessions', FREELANCER: 'Client Work', BUSINESS_OWNER: 'Work Sessions', ENTREPRENEUR: 'Build Sessions', JOB_SEEKER: 'Prep Sessions', TEACHER: 'Teaching Prep' },
+  },
   { to: '/routine', label: 'Daily Routine', icon: Moon },
   { to: '/assistant', label: 'AI Assistant', icon: Bot, badge: 'AI' },
   { to: '/analytics', label: 'Analytics', icon: BarChart3 },
@@ -56,6 +67,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
+  // Falls back to OTHER, whose labels are the generic ones, so the sidebar
+  // never waits on a request before it can render.
+  const occupationType: OccupationType = useOccupation().data?.occupation.type ?? 'OTHER';
 
   const { data: counts } = useQuery({
     queryKey: ['nav-counts'],
@@ -85,7 +99,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             className={({ isActive }) => cn('nav-item', isActive && 'nav-item-active')}
           >
             <item.icon className="h-4.5 w-4.5 shrink-0" />
-            <span className="flex-1">{item.label}</span>
+            <span className="flex-1">{item.labelFor?.[occupationType] ?? item.label}</span>
             {item.badge && (
               <span className="rounded-full bg-brand-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-brand-700 dark:bg-brand-500/20 dark:text-brand-300">
                 {item.badge}

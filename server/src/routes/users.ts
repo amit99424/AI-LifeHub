@@ -4,9 +4,100 @@ import { prisma } from '../lib/prisma.js';
 import { ApiError, ah, validate } from '../lib/http.js';
 import { requireAuth } from '../middleware/auth.js';
 import { config } from '../config.js';
+import {
+  OCCUPATION_PROFILES,
+  OCCUPATION_TYPES,
+  classifyOccupation,
+  mergeWidgetOrder,
+  occupationDisplayName,
+  resolveOccupation,
+  type OccupationType,
+} from '../services/occupations.js';
 
 export const usersRouter = Router();
 usersRouter.use(requireAuth);
+
+// ── occupation ───────────────────────────────────────────────
+// Everything the client needs to personalise itself, resolved server-side so
+// the rules live in exactly one place (services/occupations.ts).
+async function occupationFor(userId: string) {
+  const [profile, label] = await Promise.all([
+    prisma.profile.findUnique({ where: { userId }, select: { occupation: true, occupationType: true } }),
+    prisma.occupationLabel.findUnique({ where: { userId }, select: { label: true } }),
+  ]);
+  const resolved = resolveOccupation({
+    occupationType: profile?.occupationType ?? null,
+    occupation: profile?.occupation ?? null,
+    customLabel: label?.label ?? null,
+  });
+  return {
+    type: resolved.type,
+    profile: resolved.profile,
+    source: resolved.source,
+    displayName: occupationDisplayName(resolved.profile, label?.label),
+    customLabel: label?.label ?? null,
+    /** True when we guessed from old free text — the UI should offer to confirm. */
+    needsConfirmation: resolved.source !== 'typed',
+  };
+}
+
+usersRouter.get(
+  '/occupation',
+  ah(async (req, res) => {
+    res.json({
+      occupation: await occupationFor(req.user!.id),
+      options: OCCUPATION_TYPES.map((t) => OCCUPATION_PROFILES[t]),
+    });
+  }),
+);
+
+const occupationSchema = z.object({
+  occupationType: z.enum(OCCUPATION_TYPES),
+  // Only meaningful for OTHER, but accepted for any type so switching away and
+  // back does not lose what the person typed.
+  customLabel: z.string().trim().max(80).nullable().optional(),
+  // Free-text display label. Optional; when absent we derive it.
+  occupation: z.string().trim().max(80).nullable().optional(),
+});
+
+usersRouter.put(
+  '/occupation',
+  validate({ body: occupationSchema }),
+  ah(async (req, res) => {
+    const body = req.body as z.infer<typeof occupationSchema>;
+    const userId = req.user!.id;
+
+    const customLabel = body.customLabel?.trim() || null;
+    const typedLabel = body.occupation?.trim() || null;
+    // The human-readable string stored in the legacy column. For OTHER this is
+    // the person's own words; otherwise it is the profile's label, so old code
+    // that reads `occupation` still shows something sensible.
+    const displayLabel =
+      typedLabel ?? (body.occupationType === 'OTHER' ? customLabel : OCCUPATION_PROFILES[body.occupationType].label);
+
+    // Interactive transaction: the spread above produced a union of tuple
+    // shapes that Prisma's array overload cannot type. An explicit callback is
+    // both clearer and correctly typed.
+    await prisma.$transaction(async (tx) => {
+      await tx.profile.upsert({
+        where: { userId },
+        create: { userId, occupationType: body.occupationType, occupation: displayLabel },
+        update: { occupationType: body.occupationType, occupation: displayLabel },
+      });
+      if (customLabel) {
+        await tx.occupationLabel.upsert({
+          where: { userId },
+          create: { userId, label: customLabel },
+          update: { label: customLabel },
+        });
+      } else {
+        await tx.occupationLabel.deleteMany({ where: { userId } });
+      }
+    });
+
+    res.json({ occupation: await occupationFor(userId) });
+  }),
+);
 
 // ── profile ──────────────────────────────────────────────────
 usersRouter.get(
@@ -99,6 +190,8 @@ usersRouter.patch(
 // ── onboarding ───────────────────────────────────────────────
 const onboardingSchema = z.object({
   occupation: z.string().trim().max(80).optional(),
+  occupationType: z.enum(OCCUPATION_TYPES).optional(),
+  customLabel: z.string().trim().max(80).nullable().optional(),
   primaryGoal: z.string().trim().max(120).optional(),
   focusHours: z.array(z.string().max(20)).max(6).optional(),
   timezone: z.string().trim().max(64).optional(),
@@ -123,11 +216,20 @@ usersRouter.post(
     const body = req.body as z.infer<typeof onboardingSchema>;
     const userId = req.user!.id;
 
+    // Resolve what to store: the typed enum if given, else classify whatever
+    // free text arrived, so both the new client and any old one work.
+    const typed = body.occupationType ?? classifyOccupation(body.customLabel) ?? classifyOccupation(body.occupation) ?? null;
+    const customLabel = body.customLabel?.trim() || null;
+    const displayOccupation =
+      body.occupation?.trim() ||
+      (typed === 'OTHER' ? customLabel : typed ? OCCUPATION_PROFILES[typed].label : null);
+
     const profile = await prisma.profile.upsert({
       where: { userId },
       create: {
         userId,
-        occupation: body.occupation,
+        occupationType: typed,
+        occupation: displayOccupation,
         primaryGoal: body.primaryGoal,
         focusHours: body.focusHours ?? [],
         timezone: body.timezone,
@@ -135,7 +237,8 @@ usersRouter.post(
         onboardingStep: body.complete ? 4 : 1,
       },
       update: {
-        occupation: body.occupation,
+        ...(body.occupation !== undefined || typed ? { occupationType: typed } : {}),
+        occupation: displayOccupation,
         primaryGoal: body.primaryGoal,
         focusHours: body.focusHours,
         timezone: body.timezone,
@@ -143,6 +246,14 @@ usersRouter.post(
         onboardingStep: body.complete ? 4 : 1,
       },
     });
+
+    if (customLabel) {
+      await prisma.occupationLabel.upsert({
+        where: { userId },
+        create: { userId, label: customLabel },
+        update: { label: customLabel },
+      });
+    }
 
     let created = 0;
     if (body.habits?.length) {

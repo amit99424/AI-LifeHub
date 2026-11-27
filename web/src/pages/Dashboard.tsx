@@ -268,6 +268,22 @@ export default function Dashboard() {
                   : `Today’s score is ${score.score}/100. ${s.tasksCompleted} task${s.tasksCompleted === 1 ? '' : 's'} done, ${s.habitsDone}/${s.habitsActive} habits, ${formatMinutes(s.focusMinutes)} focused.`}
             </p>
 
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-ink-500 dark:text-ink-400">
+              <span className="rounded-full border border-[rgb(var(--border))] px-2.5 py-1 font-semibold">
+                {data.occupation.displayName}
+              </span>
+              {data.occupation.needsConfirmation ? (
+                <span>
+                  We inferred this from your old profile.{' '}
+                  <Link to="/settings" className="font-semibold text-brand-600 hover:underline dark:text-brand-400">
+                    Is that right?
+                  </Link>
+                </span>
+              ) : (
+                <span>Your dashboard and insights are tuned for this.</span>
+              )}
+            </div>
+
             <div className="mt-4 flex flex-wrap gap-2">
               <Link to="/tasks" className="btn-primary h-9 px-3.5 text-[13px]">
                 <Plus className="h-4 w-4" /> Add task

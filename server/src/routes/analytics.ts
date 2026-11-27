@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { ah, validate } from '../lib/http.js';
 import { requireAuth, userTz } from '../middleware/auth.js';
+import { occupationDisplayName, resolveOccupation } from '../services/occupations.js';
 import { buildAnalytics } from '../services/analytics.js';
 import { addDaysKey, endOfMonthKey, startOfMonthKey, todayKey } from '../lib/dates.js';
 
@@ -42,7 +43,14 @@ analyticsRouter.get(
   ah(async (req, res) => {
     const tz = userTz(req);
     const today = todayKey(tz);
-    const profile = await prisma.profile.findUnique({ where: { userId: req.user!.id }, select: { weekStart: true, primaryGoal: true, onboarded: true } });
+    const profile = await prisma.profile.findUnique({
+      where: { userId: req.user!.id },
+      select: { weekStart: true, primaryGoal: true, onboarded: true, occupation: true, occupationType: true },
+    });
+    const occupationLabel = await prisma.occupationLabel.findUnique({
+      where: { userId: req.user!.id },
+      select: { label: true },
+    });
     const [full, deadlines, moodToday, habitsToday, recentInsights, unreadCounts] = await Promise.all([
       buildAnalytics(req.user!.id, { fromKey: addDaysKey(today, -29), toKey: today, tz, weekStart: profile?.weekStart ?? 1 }),
       prisma.task.findMany({
@@ -71,6 +79,22 @@ analyticsRouter.get(
       greetingName: req.user!.name.split(' ')[0],
       onboarded: profile?.onboarded ?? false,
       primaryGoal: profile?.primaryGoal ?? null,
+      // The dashboard renders itself from this: labels, category chips and
+      // widget order all come from the occupation profile.
+      occupation: (() => {
+        const resolved = resolveOccupation({
+          occupationType: profile?.occupationType ?? null,
+          occupation: profile?.occupation ?? null,
+          customLabel: occupationLabel?.label ?? null,
+        });
+        return {
+          type: resolved.type,
+          profile: resolved.profile,
+          source: resolved.source,
+          displayName: occupationDisplayName(resolved.profile, occupationLabel?.label),
+          needsConfirmation: resolved.source !== 'typed',
+        };
+      })(),
       summary: full.today,
       streaks: full.streaks,
       week: full.weekly.at(-1) ?? null,
