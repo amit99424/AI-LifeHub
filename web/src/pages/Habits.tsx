@@ -124,7 +124,9 @@ export default function Habits() {
             {habits.length ? `${doneToday}/${habits.length} checked in today · one click each, history recorded automatically` : 'One click a day is all the tracking this needs'}
           </p>
         </div>
-        <Button size="sm" onClick={() => setModal({ ...EMPTY })} icon={<Plus className="h-4 w-4" />}>
+        {/* Full size, matching New project and New goal: the three primary
+            create actions should not be three different sizes. */}
+        <Button onClick={() => setModal({ ...EMPTY })} icon={<Plus className="h-4 w-4" />}>
           New habit
         </Button>
       </div>

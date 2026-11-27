@@ -197,8 +197,8 @@ export default function Analytics() {
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={data.weekly} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="rgb(var(--border))" vertical={false} />
-                      <XAxis dataKey="label" tickLine={false} axisLine={false} />
-                      <YAxis tickLine={false} axisLine={false} width={30} />
+                      <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 10 }} interval="preserveStartEnd" minTickGap={12} />
+                      <YAxis tickLine={false} axisLine={false} width={30} tick={{ fontSize: 10 }} />
                       <Tooltip />
                       <Legend iconType="circle" wrapperStyle={{ fontSize: 11 }} />
                       <Bar dataKey="tasksCompleted" name="Tasks" fill="#7f56ff" radius={[4, 4, 0, 0]} />
@@ -219,8 +219,8 @@ export default function Analytics() {
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={data.monthly} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="rgb(var(--border))" vertical={false} />
-                      <XAxis dataKey="label" tickLine={false} axisLine={false} />
-                      <YAxis tickLine={false} axisLine={false} width={30} />
+                      <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 10 }} interval="preserveStartEnd" minTickGap={12} />
+                      <YAxis tickLine={false} axisLine={false} width={30} tick={{ fontSize: 10 }} />
                       <Tooltip />
                       <Legend iconType="circle" wrapperStyle={{ fontSize: 11 }} />
                       <Line type="monotone" dataKey="tasksCompleted" name="Tasks" stroke="#7f56ff" strokeWidth={2.5} dot={{ r: 3 }} />

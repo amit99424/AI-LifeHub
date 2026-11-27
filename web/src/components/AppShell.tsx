@@ -107,7 +107,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </button>
       </div>
 
-      <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 pb-4">
+      <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 pb-3">
         <p className="px-3 pb-1.5 pt-2 text-[10px] font-bold uppercase tracking-[0.14em] text-ink-400">Workspace</p>
         {NAV.map((item) => (
           <NavLink
@@ -140,7 +140,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* Hidden below a tall window: with 16 nav items this card would otherwise
           push Profile and Settings under the account row. */}
-      <div className="mx-3 mb-3 rounded-2xl border border-[rgb(var(--border))] bg-brand-50 p-3.5 dark:bg-brand-500/10 [@media(max-height:800px)]:hidden">
+      <div className="mx-3 mb-3 rounded-2xl border border-[rgb(var(--border))] bg-brand-50 p-3.5 dark:bg-brand-500/10 [@media(max-height:1000px)]:hidden">
         <div className="flex items-center gap-2">
           <Sparkles className="h-4 w-4 text-brand-600 dark:text-brand-300" />
           <p className="text-xs font-bold text-ink-900 dark:text-white">Low-effort tracking</p>
@@ -208,7 +208,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   );
 
   const currentLabel =
-    [...NAV, ...ACCOUNT].find((n) => location.pathname.startsWith(n.to))?.label ?? 'Dashboard';
+    [...NAV, ...ACCOUNT]
+      .filter((n) => location.pathname === n.to || location.pathname.startsWith(`${n.to}/`))
+      .sort((a, b) => b.to.length - a.to.length)[0]?.label ?? 'Dashboard';
 
   return (
     <div className="flex min-h-screen bg-[rgb(var(--bg))]">

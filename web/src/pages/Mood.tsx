@@ -126,7 +126,11 @@ export default function Mood() {
       ) : (
         <div className="grid gap-3 lg:grid-cols-3">
           <Card className="lg:col-span-2">
-            <CardHeader title="Mood trend" subtitle={`Average ${data?.avgScore ?? '—'} / 5 across ${data?.logs.length ?? 0} entries`} icon={<TrendingUp className="h-4.5 w-4.5" />} />
+            <CardHeader title="Mood trend" subtitle={
+              data?.avgScore === null || data?.avgScore === undefined
+                ? 'No mood recorded in this range'
+                : `Average ${data.avgScore} / 5 across ${data.logs.length} entr${data.logs.length === 1 ? 'y' : 'ies'}`
+            } icon={<TrendingUp className="h-4.5 w-4.5" />} />
             {series.some((s) => s.score !== null) ? (
               <div className="h-56">
                 <ResponsiveContainer width="100%" height="100%">
