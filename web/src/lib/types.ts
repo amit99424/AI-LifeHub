@@ -809,3 +809,58 @@ export interface ProposedActionDto {
     goal?: { id: string; title: string };
   };
 }
+
+// ─────────────────────────────────────────────────────────────
+// Phase 7 — reports
+// ─────────────────────────────────────────────────────────────
+
+export type ReportPeriod = 'day' | 'week' | 'month';
+
+export interface ReportMetricDto {
+  key: string;
+  label: string;
+  value: number | null;
+  unit: string | null;
+  previous: number | null;
+  change: number | null;
+  recorded: boolean;
+}
+
+export interface ReportRowDto {
+  date: string;
+  tasksCompleted: number | null;
+  tasksCreated: number | null;
+  focusMinutes: number | null;
+  habitCheckins: number | null;
+  mood: number | null;
+  stress: number | null;
+  energy: number | null;
+  sleepQuality: number | null;
+  sleepHours: number | null;
+}
+
+export interface ReportDto {
+  period: ReportPeriod;
+  range: { from: string; to: string; label: string };
+  previousRange: { from: string; to: string };
+  generatedAt: string;
+  metrics: ReportMetricDto[];
+  rows: ReportRowDto[];
+  goals: { id: string; title: string; current: number | null; target: number | null; metric: string | null; deadline: string | null; fraction: number | null; milestonesDone: number; milestonesTotal: number }[];
+  projects: { id: string; title: string; status: string; tasksDone: number; tasksTotal: number; minutes: number; fraction: number | null }[];
+  skills: { id: string; name: string; level: string; practiceMinutes: number; practiceDays: number; levelsGained: number }[];
+  accomplishments: string[];
+  needsAttention: string[];
+  gaps: string[];
+  thin: boolean;
+  totals: { tasksCompleted: number; tasksCreated: number; focusMinutes: number; habitCheckins: number; daysWithData: number; days: number };
+}
+
+export interface MonthlyReviewDto {
+  text: string;
+  source: 'AI' | 'FALLBACK';
+  provider: string | null;
+  model: string | null;
+  generatedAt: string;
+  note: string | null;
+}

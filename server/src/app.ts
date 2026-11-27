@@ -24,6 +24,7 @@ import { activityRouter } from './routes/activity.js';
 import { wellnessRouter } from './routes/wellness.js';
 import { aiRouter } from './routes/ai.js';
 import { analyticsRouter } from './routes/analytics.js';
+import { reportsRouter } from './routes/reports.js';
 import { prisma } from './lib/prisma.js';
 import { aiStatus } from './services/llm.js';
 
@@ -178,6 +179,7 @@ app.use('/api/plans', plansRouter);
   app.use('/api/wellness', wellnessRouter);
   app.use('/api/ai', aiRouter);
   app.use('/api/analytics', analyticsRouter);
+  app.use('/api/reports', reportsRouter);
 
   // Serve the built SPA when it is bundled with the API (single-container
   // deployment). On Render this path is skipped: Vercel serves the frontend and
