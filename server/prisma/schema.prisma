@@ -58,6 +58,10 @@ model User {
   auditLogs       AuditLog[]
   projects        Project[]
   goals           Goal[]
+  skills          Skill[]
+  skillUpdates    SkillUpdate[]
+  skillEvidence   SkillEvidence[]
+  developmentPlans DevelopmentPlan[]
 
   @@index([createdAt])
 }
@@ -370,8 +374,19 @@ model Goal {
   projectId String?  @db.Uuid
   project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
 
+  // Phase 5: a goal may be the record of a skill being developed. Nullable, so
+  // every goal that existed before growth planning keeps working untouched.
+  skillId String? @db.Uuid
+  skill   Skill?  @relation(fields: [skillId], references: [id], onDelete: SetNull)
+
   tasks      Task[]
   milestones Milestone[]
+
+  // The plan item that produced this goal, if any. SetNull on delete: a goal
+  // outlives the plan it came from, it does not disappear with it.
+  planItems DevelopmentPlanItem[]
+  // A goal can be the goal of a development plan.
+  plans DevelopmentPlan[]
 
   isDemo    Boolean  @default(false)
   createdAt DateTime @default(now())
@@ -597,6 +612,7 @@ enum InsightType {
   ROUTINE
   FOCUS
   GOALS
+  GROWTH
 }
 
 model AIInsight {
@@ -672,4 +688,196 @@ model UserUsage {
   updatedAt       DateTime @updatedAt
 
   @@unique([userId, date])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Phase 5: skills, evidence and development plans
+// ─────────────────────────────────────────────────────────────
+
+enum SkillCategory {
+  TECHNICAL
+  COMMUNICATION
+  LEADERSHIP
+  BUSINESS
+  ACADEMIC
+  CREATIVE
+  PERSONAL
+  OTHER
+}
+
+/// Ordered, not scored. A level is a word the user picked; the numeric `rank`
+/// exists only so the UI can sort and compare, never to invent a percentage.
+enum SkillLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+  EXPERT
+}
+
+enum SkillStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+}
+
+model Skill {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name        String
+  category    SkillCategory @default(OTHER)
+  description String?
+
+  /// Where the person is now, and where they want to be. Never inferred:
+  /// both are set by the user, and every change writes a SkillUpdate row.
+  currentLevel SkillLevel @default(BEGINNER)
+  targetLevel  SkillLevel?
+
+  status SkillStatus @default(ACTIVE)
+  /// Why this skill matters to them, in their words.
+  motivation String?
+
+  startedAt   DateTime @default(now())
+  achievedAt  DateTime?
+  archivedAt  DateTime?
+
+  updates   SkillUpdate[]
+  evidence  SkillEvidence[]
+  goals     Goal[]
+  planItems DevelopmentPlanItem[]
+
+  isDemo    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, name])
+  @@index([userId, status])
+  @@index([userId, category])
+}
+
+/// One row per recorded level change. This is what makes "improved" a fact
+/// rather than a guess: without a row here, nothing claims a change happened.
+model SkillUpdate {
+  id      String @id @default(uuid()) @db.Uuid
+  skillId String @db.Uuid
+  skill   Skill  @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  userId  String @db.Uuid
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  fromLevel SkillLevel?
+  toLevel   SkillLevel
+  note      String?
+  /// Minutes the user recorded practising for this change, if they recorded any.
+  minutes   Int?
+  createdAt DateTime  @default(now())
+
+  @@index([skillId, createdAt])
+  @@index([userId, createdAt])
+}
+
+enum EvidenceKind {
+  PRACTICE
+  PROJECT
+  COURSE
+  CERTIFICATE
+  FEEDBACK
+  PORTFOLIO
+  NOTE
+}
+
+/// Evidence the user attached to a skill. Free text and a link; the app never
+/// reads the link, it only stores what the person says it is.
+model SkillEvidence {
+  id      String @id @default(uuid()) @db.Uuid
+  skillId String @db.Uuid
+  skill   Skill  @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  userId  String @db.Uuid
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  kind  EvidenceKind @default(NOTE)
+  title String
+  detail String?
+  url    String?
+  date   DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([skillId])
+  @@index([userId])
+}
+
+enum PlanStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+  ARCHIVED
+}
+
+/// A development plan: the AI's recommendation, kept as a record so it can be
+/// measured later. Its items point at real Goal / Milestone / Task rows --
+/// the plan never becomes a second task system.
+model DevelopmentPlan {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title    String
+  summary  String?
+  /// Where the plan came from. AI plans are recommendations and are labelled
+  /// as such everywhere they are shown.
+  source   String  @default("AI")
+  status   PlanStatus @default(DRAFT)
+
+  horizonWeeks Int @default(4)
+  weeklyMinutes Int?
+  /// The measured evidence the model was given, kept for audit.
+  inputs Json?
+
+  goalId String? @db.Uuid
+  goal   Goal?   @relation(fields: [goalId], references: [id], onDelete: SetNull)
+
+  items DevelopmentPlanItem[]
+
+  isDemo    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, status])
+}
+
+enum PlanItemKind {
+  OBJECTIVE
+  ACTIVITY
+  MILESTONE
+  SKILL
+}
+
+model DevelopmentPlanItem {
+  id     String @id @default(uuid()) @db.Uuid
+  planId String @db.Uuid
+  plan   DevelopmentPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  userId String @db.Uuid
+
+  kind PlanItemKind @default(ACTIVITY)
+  title String
+  detail String?
+  week  Int  @default(1)
+  order Int  @default(0)
+  /// How the person will know it worked, in the plan's own words.
+  successCriteria String?
+
+  skillId String? @db.Uuid
+  skill   Skill?  @relation(fields: [skillId], references: [id], onDelete: SetNull)
+
+  /// The real records this item was applied to. Null until the user applies it.
+  goalId       String? @db.Uuid
+  goal         Goal?   @relation(fields: [goalId], references: [id], onDelete: SetNull)
+  milestoneId  String? @db.Uuid
+  taskId       String? @db.Uuid
+  appliedAt    DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([planId, order])
+  @@index([userId])
 }

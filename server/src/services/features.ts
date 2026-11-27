@@ -141,6 +141,49 @@ export interface DataAvailability {
   missing: string[];
 }
 
+/**
+ * What the prompt needs to know about growth, flattened. The full analysis
+ * stays in `growth.ts`; this is the projection the model reads, and it carries
+ * only measured figures plus the ids of the records behind them.
+ */
+export interface GrowthFeatureSummary {
+  /** Counted from real rows, so a "0 skills" in the prompt can be trusted. */
+  tracked: { skills: number; updatesInWindow: number };
+  totals: {
+    skills: number;
+    active: number;
+    paused: number;
+    completed: number;
+    levelsGained: number;
+    practiceMinutes: number;
+    practiceDays: number;
+    evidence: number;
+    activePlans: number;
+  };
+  perSkill: {
+    skillId: string;
+    name: string;
+    category: string;
+    status: string;
+    currentLevel: string;
+    targetLevel: string | null;
+    levelsToTarget: number | null;
+    levelsGainedInWindow: number;
+    practiceMinutes: number;
+    practiceDays: number;
+    daysSinceActivity: number | null;
+    evidenceCount: number;
+  }[];
+  /** Only skills with a recorded upward change. Empty means nothing improved. */
+  improving: { name: string; from: string | null; to: string; gained: number }[];
+  needingAttention: { name: string; reason: string }[];
+  goals: { total: number; withTarget: number; milestonesDone: number; milestonesTotal: number; behind: { title: string; current: number | null; target: number | null; metric: string | null; deadline: string }[] };
+  consistency: { activeDays: number; bestStreak: number; thin: boolean; note: string };
+  weekly: { weekStart: string; minutes: number; days: number; levelsGained: number }[];
+  summary: { headline: string; detail: string };
+  sufficiency: { enough: boolean; message: string };
+}
+
 export interface FeatureBundle {
   window: { from: string; to: string; days: number; tz: string };
   tasks: TaskFeatures;
@@ -151,6 +194,13 @@ export interface FeatureBundle {
   routine: RoutineFeatures;
   studyWork: ProjectFeatures;
   goals: GoalFeatures;
+  /**
+   * The growth read, computed by the growth engine and attached here so every
+   * consumer (insights, the assistant, the plan generator) receives the same
+   * numbers. It is optional only because `computeFeatures` is pure and does not
+   * query; `withGrowth` attaches it before anything reads it.
+   */
+  growth: GrowthFeatureSummary;
   availability: DataAvailability;
   derived: {
     moodVsProductivity: { label: string; moodScore: number; completions: number; sessions: number; days: number }[];
@@ -566,6 +616,8 @@ export function computeFeatures(data: ActivityData, opts: { from: Date; to: Date
   for (const m of data.moodLogs) activityDays.add(dateKey(m.date));
   for (const j of data.journalEntries) activityDays.add(dateKey(j.date));
   for (const s of data.workSessions) activityDays.add(localDateKey(s.startedAt, tz));
+  // Recorded skill practice is activity: a day spent on a skill is not an empty day.
+  for (const u of data.skillUpdates) activityDays.add(localDateKey(u.createdAt, tz));
 
   const missing: string[] = [];
   if (completed.length < 5) missing.push('task completion history (need ≥5 completed tasks)');
@@ -574,6 +626,9 @@ export function computeFeatures(data: ActivityData, opts: { from: Date; to: Date
   if (data.workSessions.length < 3) missing.push('focus sessions (need ≥3)');
   if (data.journalEntries.length < 1) missing.push('journal entries');
   if (data.dailyActivities.length < 3) missing.push('routine data such as sleep or screen time');
+  // A skill practice row with no skill behind it is a real gap, and one the
+  // assistant can act on, so it is named.
+  if (data.skillUpdates.length > 0 && data.skillCount === 0) missing.push('skills recorded (there is practice activity but no skill to attach it to)');
 
   const availability: DataAvailability = {
     daysWithAnyActivity: activityDays.size,
@@ -598,9 +653,31 @@ export function computeFeatures(data: ActivityData, opts: { from: Date; to: Date
     routine: routineFeatures,
     studyWork,
     goals,
+    // Attached by `withGrowth`; an empty read until then, so a caller that
+    // forgets it gets "nothing recorded" rather than a crash or a fabricated
+    // number.
+    growth: EMPTY_GROWTH,
     availability,
     derived: { moodVsProductivity, sleepVsProductivity, screenVsProductivity },
   };
+}
+
+const EMPTY_GROWTH: GrowthFeatureSummary = {
+  tracked: { skills: 0, updatesInWindow: 0 },
+  totals: { skills: 0, active: 0, paused: 0, completed: 0, levelsGained: 0, practiceMinutes: 0, practiceDays: 0, evidence: 0, activePlans: 0 },
+  perSkill: [],
+  improving: [],
+  needingAttention: [],
+  goals: { total: 0, withTarget: 0, milestonesDone: 0, milestonesTotal: 0, behind: [] },
+  consistency: { activeDays: 0, bestStreak: 0, thin: true, note: 'No practice recorded.' },
+  weekly: [],
+  summary: { headline: 'No skills recorded yet', detail: 'Nothing recorded in this window, so there is nothing to report.' },
+  sufficiency: { enough: false, message: 'No skills recorded yet.' },
+};
+
+/** Attach the growth read to a bundle. One place decides what the model sees. */
+export function withGrowth(f: FeatureBundle, growth: GrowthFeatureSummary): FeatureBundle {
+  return { ...f, growth };
 }
 
 /** Compact JSON for the prompt: drops nulls/empties so tokens are not wasted. */

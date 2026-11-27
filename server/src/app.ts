@@ -18,6 +18,8 @@ import { journalRouter } from './routes/journal.js';
 import { sessionsRouter } from './routes/sessions.js';
 import { projectsRouter } from './routes/projects.js';
 import { goalsRouter } from './routes/goals.js';
+import { skillsRouter } from './routes/skills.js';
+import { plansRouter } from './routes/plans.js';
 import { activityRouter } from './routes/activity.js';
 import { wellnessRouter } from './routes/wellness.js';
 import { aiRouter } from './routes/ai.js';
@@ -170,6 +172,8 @@ export function createApp() {
   app.use('/api/sessions', sessionsRouter);
 app.use('/api/projects', projectsRouter);
 app.use('/api/goals', goalsRouter);
+app.use('/api/skills', skillsRouter);
+app.use('/api/plans', plansRouter);
   app.use('/api/activity', activityRouter);
   app.use('/api/wellness', wellnessRouter);
   app.use('/api/ai', aiRouter);

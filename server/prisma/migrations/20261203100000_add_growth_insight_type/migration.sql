@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "InsightType" ADD VALUE IF NOT EXISTS 'GROWTH';

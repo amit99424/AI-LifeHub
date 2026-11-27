@@ -9,7 +9,9 @@ import { InsightType, type JournalEntry } from '@prisma/client';
 import { prisma } from '../lib/prisma.js';
 import { aiFocusLine, occupationDisplayName, resolveOccupation } from './occupations.js';
 import { collectActivityData, truncate } from './collector.js';
-import { compactFeatures, computeFeatures, type FeatureBundle } from './features.js';
+import { compactFeatures, computeFeatures, withGrowth, type FeatureBundle, type GrowthFeatureSummary } from './features.js';
+import { analyseGrowth } from './growth.js';
+import { collectGrowth } from '../routes/skills.js';
 import { AIUnconfiguredError, complete, estimateTokens, parseJsonLoose, truncateToTokens, type LLMMessage } from './llm.js';
 import { config } from '../config.js';
 import { addDaysKey, todayKey } from '../lib/dates.js';
@@ -65,9 +67,53 @@ export async function buildFeatureBundle(userId: string, tz: string, windowDays:
   const fromKey = addDaysKey(today, -(windowDays - 1));
   const from = new Date(`${fromKey}T00:00:00.000Z`);
   const to = new Date(`${addDaysKey(today, 1)}T00:00:00.000Z`);
-  const data = await collectActivityData(userId, { from, to, tz });
-  const features = computeFeatures(data, { from, to, tz, todayKey: today });
+  const [data, growthInput] = await Promise.all([
+    collectActivityData(userId, { from, to, tz }),
+    collectGrowth(userId, tz, windowDays),
+  ]);
+  const features = withGrowth(computeFeatures(data, { from, to, tz, todayKey: today }), growthSummary(analyseGrowth(growthInput)));
   return { features, data, today, fromKey };
+}
+
+/**
+ * The projection of the growth read the prompt receives. Only measured figures
+ * and the ids behind them; nothing here is inferred from time passing.
+ */
+export function growthSummary(a: ReturnType<typeof analyseGrowth>): GrowthFeatureSummary {
+  return {
+    tracked: {
+      skills: a.totals.skills,
+      updatesInWindow: a.perSkill.reduce((n, p) => n + (p.levelsGainedInWindow > 0 || p.practiceMinutes > 0 ? 1 : 0), 0),
+    },
+    totals: a.totals,
+    perSkill: a.perSkill.map((p) => ({
+      skillId: p.skillId,
+      name: p.name,
+      category: p.category,
+      status: p.status,
+      currentLevel: p.currentLevel,
+      targetLevel: p.targetLevel,
+      levelsToTarget: p.levelsToTarget,
+      levelsGainedInWindow: p.levelsGainedInWindow,
+      practiceMinutes: p.practiceMinutes,
+      practiceDays: p.practiceDays,
+      daysSinceActivity: p.daysSinceActivity,
+      evidenceCount: p.evidenceCount,
+    })),
+    improving: a.improving.map((p) => ({ name: p.name, from: p.levelAtWindowStart, to: p.currentLevel, gained: p.levelsGainedInWindow })),
+    needingAttention: a.needingAttention.map((n) => ({ name: n.skill.name, reason: n.reason })),
+    goals: {
+      total: a.goals.total,
+      withTarget: a.goals.withTarget,
+      milestonesDone: a.goals.milestonesDone,
+      milestonesTotal: a.goals.milestonesTotal,
+      behind: a.goals.behind.map((b) => ({ title: b.title, current: b.current, target: b.target, metric: b.metric, deadline: b.deadline })),
+    },
+    consistency: a.consistency,
+    weekly: a.weekly,
+    summary: a.summary,
+    sufficiency: a.sufficiency,
+  };
 }
 
 /**
@@ -101,7 +147,11 @@ Rules you must never break:
 3. Correlations are correlations: write "has tended to", never "causes", "proves" or "because of".
 4. You are not a doctor or therapist. Never diagnose, never give medical or psychological advice. Mood data is self-reported.
 5. Be concise, specific and warm. Reference the user's actual numbers when you make a point.
-6. No emojis, no markdown headings. Plain sentences and short bullet-like lines are enough.`;
+6. No emojis, no markdown headings. Plain sentences and short bullet-like lines are enough.
+7. The GROWTH block is measured: skills, recorded level changes, practice minutes and goals. Read it before saying anything about skills, and never state a skill count, a level or an improvement that is not in it.
+8. Separate what was measured from what you recommend. A recommendation is a suggestion; it must never be written as something the user already did or achieved.
+9. Never predict how long reaching a level will take, and never compare the user with anyone else — their own earlier level is the only baseline.
+10. When a figure is absent or null, say it is not recorded. Do not treat it as zero and do not infer it.`;
 
 function windowLabel(f: FeatureBundle) {
   return `${f.window.from} to ${f.window.to} (${f.window.days} days, timezone ${f.window.tz})`;
@@ -156,6 +206,12 @@ const INSIGHT_SPECS: Record<
     needs: (f) => f.goals.active > 0,
     focus:
       'Use goals.active, goals.withTarget and goals.behind. Only goals that appear in goals.behind have a recorded number under half its target with a deadline; a goal with no target has no percentage and must not be described as behind. Say what is actually recorded and, if a goal is behind, name one concrete next step from its own metric.',
+  },
+  GROWTH: {
+    label: 'Skill growth',
+    needs: (f) => f.growth.totals.skills > 0,
+    focus:
+      'Use the growth block only. growth.improving lists skills whose recorded level change went up inside the window; growth.perSkill carries each current level, target, practice minutes and days since last activity; growth.needingAttention names skills with no recorded activity; growth.goals.behind lists goals with a recorded number under half their target. Never say a skill improved unless it is in growth.improving, and never predict how long a level will take. Separate what was measured from what you suggest: recommendations are suggestions. Suggest at most two next steps, each tied to a named skill or goal.',
   },
   ROUTINE: {
     label: 'Routine signals',
@@ -386,9 +442,10 @@ export async function askAssistant(
   ]);
   const dataBlock = truncateToTokens(compactFeatures(features), config.AI_MAX_CONTEXT_TOKENS);
 
+  const growthNote = `\n\nSKILLS TRACKED: ${features.growth.tracked.skills}. Recorded skill activity in this window: ${features.growth.totals.levelsGained} level change(s), ${features.growth.totals.practiceMinutes} practice minute(s) on ${features.growth.totals.practiceDays} day(s), ${features.growth.totals.evidence} evidence item(s). The gaps list under DATA LIMIT covers habits, mood and tasks only; it says nothing about skills, so use these counts for anything about skills.`;
   const availabilityNote = features.availability.sufficientForPatterns
-    ? ''
-    : `\n\nDATA LIMIT: this account only has ${features.availability.daysWithAnyActivity} day(s) of activity. If the question needs history, say what is missing (${features.availability.missing.slice(0, 3).join('; ') || 'more activity'}) and give what you can from the available data.`;
+    ? growthNote
+    : `\n\nDATA LIMIT: this account only has ${features.availability.daysWithAnyActivity} day(s) of activity. If the question needs history, say what is missing (${features.availability.missing.slice(0, 3).join('; ') || 'more activity'}) and give what you can from the available data.${growthNote}`;
 
   const messages: LLMMessage[] = [
     {

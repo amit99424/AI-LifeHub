@@ -159,7 +159,14 @@ export async function collectActivityData(userId: string, { from, to }: WindowOp
     }),
   ]);
 
-  return { tasks, completedTasks, habits, habitLogs, moodLogs, journalEntries, workSessions, dailyActivities, openTasks, projects, goals };
+  // Skill activity, so "you logged practice but no skill is recorded" is a
+  // statement about real rows rather than a gap in the bundle.
+  const [skillUpdates, skillCount] = await Promise.all([
+    prisma.skillUpdate.findMany({ where: { userId, createdAt: { gte: from, lt: to } }, select: { id: true, createdAt: true, minutes: true }, take: 500 }),
+    prisma.skill.count({ where: { userId, archivedAt: null } }),
+  ]);
+
+  return { tasks, completedTasks, habits, habitLogs, moodLogs, journalEntries, workSessions, dailyActivities, openTasks, projects, goals, skillUpdates, skillCount };
 }
 
 export type ActivityData = Awaited<ReturnType<typeof collectActivityData>>;
