@@ -184,7 +184,6 @@ export default function Assistant() {
           <h1 className="font-display text-xl font-extrabold tracking-tight text-ink-900 dark:text-white">AI assistant</h1>
           <p className="mt-0.5 text-xs text-ink-500">
             Answers grounded in your own records
-            {remaining !== null ? ` · ${remaining} message${remaining === 1 ? '' : 's'} left today` : ''}
           </p>
         </div>
         {dataWindow && (

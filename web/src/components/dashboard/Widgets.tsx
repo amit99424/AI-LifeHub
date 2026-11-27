@@ -867,8 +867,11 @@ export function ComparisonStrip({ label, comparison }: { label: string; comparis
   if (!comparison) return null;
   return (
     <Card className="p-3">
-      <div className="flex items-center justify-between">
-        <p className="text-[11px] font-bold uppercase tracking-wide text-ink-400">{label}</p>
+      {/* The badge drops under the label rather than beside it: at tablet width
+          three of these cards sit in a row and the label was wrapping to two
+          lines next to it. */}
+      <div className="flex flex-col items-start gap-1.5">
+        <p className="text-[11px] font-bold uppercase leading-tight tracking-wide text-ink-400">{label}</p>
         {!comparison.available && <Badge tone="neutral">not comparable yet</Badge>}
       </div>
       {comparison.available ? (
