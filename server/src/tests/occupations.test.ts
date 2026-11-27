@@ -16,6 +16,8 @@ import {
   aiFocusLine,
   classifyOccupation,
   mergeWidgetOrder,
+  parseLayout,
+  WIDGET_IDS,
   occupationDisplayName,
   parseOccupationType,
   resolveOccupation,
@@ -41,7 +43,7 @@ register('occupations: every one of the eight types has a complete profile', () 
 });
 
 register('occupations: every profile is internally consistent', () => {
-  const knownWidgets = new Set(['today', 'score', 'tasks', 'habits', 'focus', 'mood', 'wellness', 'deadlines', 'insight', 'week']);
+  const knownWidgets = new Set<string>(WIDGET_IDS);
   for (const type of OCCUPATION_TYPES) {
     const p = OCCUPATION_PROFILES[type];
     // Widgets must be ids the dashboard knows, with no duplicates.
@@ -207,4 +209,47 @@ register('occupations: no saved order yields the profile default untouched', () 
   const preferred = OCCUPATION_PROFILES.FREELANCER.widgets;
   assert.deepEqual(mergeWidgetOrder(preferred, null), preferred);
   assert.deepEqual(mergeWidgetOrder(preferred, []), preferred);
+});
+
+// ── phase 3: dashboard layout ───────────────────────────────
+
+register('layout: an empty or missing layout falls back to the profile order', () => {
+  assert.deepEqual(parseLayout(null), { order: null, hidden: [] });
+  assert.deepEqual(parseLayout(''), { order: null, hidden: [] });
+  assert.deepEqual(parseLayout('not json at all'), { order: null, hidden: [] });
+  assert.deepEqual(parseLayout('{}'), { order: null, hidden: [] });
+});
+
+register('layout: unknown widget ids are dropped, never thrown on', () => {
+  // A layout saved by a newer build, or hand-edited, must not break the page.
+  const parsed = parseLayout(JSON.stringify({ order: ['tasks', 'from-the-future', 'habits', 42], hidden: ['gone'] }));
+  assert.deepEqual(parsed.order, ['tasks', 'habits']);
+  assert.deepEqual(parsed.hidden, []);
+});
+
+register('layout: duplicate ids collapse and order is preserved', () => {
+  const parsed = parseLayout(JSON.stringify({ order: ['habits', 'tasks', 'habits'] }));
+  assert.deepEqual(parsed.order, ['habits', 'tasks']);
+});
+
+register('layout: hidden widgets are kept separate from order', () => {
+  const parsed = parseLayout(JSON.stringify({ order: ['tasks'], hidden: ['mood', 'week'] }));
+  assert.deepEqual(parsed.order, ['tasks']);
+  assert.deepEqual(parsed.hidden, ['mood', 'week']);
+});
+
+register('layout: mergeWidgetOrder appends profile widgets the saved layout omits', () => {
+  const merged = mergeWidgetOrder(['today', 'score', 'tasks', 'habits'], ['tasks']);
+  assert.equal(merged[0], 'tasks');
+  assert.deepEqual(new Set(merged), new Set(['today', 'score', 'tasks', 'habits']));
+  assert.equal(merged.length, 4);
+});
+
+register('layout: every occupation profile names only widgets that exist', () => {
+  const known = new Set<string>(WIDGET_IDS);
+  for (const type of OCCUPATION_TYPES) {
+    for (const w of OCCUPATION_PROFILES[type].widgets) {
+      assert.ok(known.has(w), `${type} references unknown widget "${w}"`);
+    }
+  }
 });

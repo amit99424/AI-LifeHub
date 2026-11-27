@@ -150,12 +150,28 @@ export function computeCorrelations(days: LifeDay[], minSample = MIN_SAMPLE): Co
 
   for (const spec of SPECS) {
     const pairs: [number, number][] = [];
+    let identical = 0;
     for (const d of days) {
       const x = d[spec.x];
       const y = d[spec.y];
       if (typeof x === 'number' && typeof y === 'number' && Number.isFinite(x) && Number.isFinite(y)) {
         pairs.push([x, y]);
+        // Two columns that carry the same number every day are one column
+        // wearing two names -- today that is study time and the daily score,
+        // which is built partly from it. Correlating them would report a
+        // tautology as a finding.
+        if (x === y) identical += 1;
       }
+    }
+    if (pairs.length >= minSample && identical / pairs.length > 0.9) {
+      withheld.push({
+        key: spec.key,
+        xLabel: spec.xLabel,
+        yLabel: spec.yLabel,
+        n: pairs.length,
+        reason: 'the two measures carry the same values, so this would only restate one of them',
+      });
+      continue;
     }
     if (pairs.length < minSample) {
       withheld.push({
@@ -324,6 +340,11 @@ export interface PeriodSummary {
   stress: number | null;
   energy: number | null;
   sleepQuality: number | null;
+  exerciseMinutes: number | null;
+  /** How many days in the period recorded a mood, so the mean can be trusted. */
+  moodDays: number;
+  /** Days on which a habit was checked in, for consistency claims. */
+  habitDays: number;
 }
 
 function avg(nums: (number | null)[]): number | null {
@@ -341,7 +362,19 @@ function sum(nums: (number | null)[]): number | null {
 export function summarisePeriod(days: LifeDay[]): PeriodSummary {
   return {
     days: days.length,
-    daysWithData: days.filter((d) => d.score !== null).length,
+    daysWithData: days.filter(
+      (d) =>
+        (d.tasksCompleted ?? 0) > 0 ||
+        (d.habitRate ?? 0) > 0 ||
+        (d.studyMinutes ?? 0) > 0 ||
+        d.mood !== null ||
+        d.sleepHours !== null ||
+        d.screenHours !== null ||
+        d.exerciseMinutes !== null ||
+        d.stress !== null ||
+        d.energy !== null ||
+        d.sleepQuality !== null,
+    ).length,
     score: avg(days.map((d) => d.score)),
     tasksCompleted: sum(days.map((d) => d.tasksCompleted)),
     focusMinutes: sum(days.map((d) => d.studyMinutes)),
@@ -352,6 +385,9 @@ export function summarisePeriod(days: LifeDay[]): PeriodSummary {
     stress: avg(days.map((d) => d.stress)),
     energy: avg(days.map((d) => d.energy)),
     sleepQuality: avg(days.map((d) => d.sleepQuality)),
+    exerciseMinutes: avg(days.map((d) => d.exerciseMinutes)),
+    moodDays: days.filter((d) => d.mood !== null).length,
+    habitDays: days.filter((d) => (d.habitRate ?? 0) > 0).length,
   };
 }
 
@@ -605,6 +641,16 @@ export interface LifeAnalysis {
   improvements: ImprovementArea[];
   current: PeriodSummary;
   previous: PeriodSummary;
+  /**
+   * What is going well, stated only where a number supports it. The mirror of
+   * `improvements`: the dashboard shows both, because a screen that only ever
+   * points out weaknesses is a screen people stop opening.
+   */
+  strengths: StrengthArea[];
+  /** Daily score across the window, for the trend line. */
+  trend: { date: string; score: number | null; hasData: boolean }[];
+  /** Habit consistency: the longest run of days with a check-in. */
+  consistency: Consistency;
 }
 
 export function analyseLife(input: {
@@ -627,7 +673,130 @@ export function analyseLife(input: {
     improvements: improvementAreas(days, { current, previous }),
     current,
     previous,
+    strengths: strengthAreas(days, { current, previous }),
+    trend: days.map((d) => ({
+      date: d.date,
+      score: d.score,
+      hasData:
+        (d.tasksCompleted ?? 0) > 0 ||
+        (d.habitRate ?? 0) > 0 ||
+        (d.studyMinutes ?? 0) > 0 ||
+        d.mood !== null ||
+        d.sleepHours !== null ||
+        d.stress !== null ||
+        d.energy !== null,
+    })),
+    consistency: habitConsistency(days),
   };
+}
+
+// ─────────────────────────────────────────────────────────────
+// Strengths and consistency
+// ─────────────────────────────────────────────────────────────
+
+export interface StrengthArea {
+  key: string;
+  title: string;
+  /** What the numbers say, in the user's own data. */
+  detail: string;
+  /** The evidence, named, so the claim can be checked. */
+  evidence: string;
+}
+
+/**
+ * The other half of `improvementAreas`.
+ *
+ * Every strength names the figures behind it, because "you're doing great" is
+ * not a finding. A strength is only reported when the number is genuinely
+ * better than the person's own baseline, not merely present.
+ */
+export function strengthAreas(days: LifeDay[], ctx: { current: PeriodSummary; previous: PeriodSummary }): StrengthArea[] {
+  const out: StrengthArea[] = [];
+  const { current, previous } = ctx;
+  const recent = days.slice(Math.floor(days.length / 2));
+
+  // 1. A domain that is holding up on its own terms.
+  if (current.habitRate !== null && current.habitRate >= 70 && current.habitDays >= 5) {
+    out.push({
+      key: 'habits',
+      title: 'Habits are holding',
+      detail: `You completed ${current.habitRate}% of your habits across ${current.habitDays} days.`,
+      evidence: `${current.habitRate}% habit completion over ${current.habitDays} days with a check-in.`,
+    });
+  }
+  if (current.score !== null && current.score >= 65 && current.daysWithData >= 5) {
+    out.push({
+      key: 'score',
+      title: 'Your daily score is strong',
+      detail: `An average score of ${current.score} across ${current.daysWithData} recorded days.`,
+      evidence: `Mean of the daily score over ${current.daysWithData} days: ${current.score}.`,
+    });
+  }
+
+  // 2. A metric that improved on the previous period by more than noise.
+  const improved = comparePeriods(current, previous).filter(
+    (d) => d.direction !== 'unknown' && !d.withinNoise && d.change !== null && (d.higherIsBetter ? d.change > 0 : d.change < 0),
+  );
+  for (const d of improved.slice(0, 2)) {
+    out.push({
+      key: `up-${d.key}`,
+      title: `${d.label} moved the right way`,
+      detail: `${d.label} went from ${d.previous} to ${d.current}.`,
+      evidence: `Previous period ${d.previous} → this period ${d.current}.`,
+    });
+  }
+
+  // 3. Sleep that sits in a defensible band, only when enough nights exist.
+  const nights = recent.filter((d) => d.sleepHours !== null);
+  if (nights.length >= 5) {
+    const mean = nights.reduce((a, d) => a + (d.sleepHours as number), 0) / nights.length;
+    if (mean >= 7 && mean <= 9) {
+      out.push({
+        key: 'sleep',
+        title: 'Sleep is in a good band',
+        detail: `You averaged ${Math.round(mean * 10) / 10}h across ${nights.length} recorded nights.`,
+        evidence: `${Math.round(mean * 10) / 10}h mean over ${nights.length} nights of sleep data.`,
+      });
+    }
+  }
+
+  return out.slice(0, 4);
+}
+
+export interface Consistency {
+  /** Days in a row with at least one habit check-in, ending at the last day. */
+  streak: number;
+  /** Longest such run anywhere in the window. */
+  bestStreak: number;
+  /** Days with a check-in, out of the window. */
+  daysWithCheckin: number;
+  days: number;
+  /** True when there is not enough history for the numbers to mean anything. */
+  thin: boolean;
+  note: string;
+}
+
+export function habitConsistency(days: LifeDay[]): Consistency {
+  const has = days.map((d) => (d.habitRate ?? 0) > 0);
+  const daysWithCheckin = has.filter(Boolean).length;
+
+  let best = 0;
+  let run = 0;
+  for (const h of has) {
+    run = h ? run + 1 : 0;
+    if (run > best) best = run;
+  }
+  let streak = 0;
+  for (let i = has.length - 1; i >= 0 && has[i]; i--) streak += 1;
+
+  const thin = daysWithCheckin < 5;
+  const note = thin
+    ? `Only ${daysWithCheckin} ${daysWithCheckin === 1 ? 'day' : 'days'} with a habit check-in. Consistency needs a week before it reads as a pattern.`
+    : streak > 0
+      ? `${streak} day${streak === 1 ? '' : 's'} in a row. Best run in this window: ${best}.`
+      : `No run going right now. Best run in this window: ${best} day${best === 1 ? '' : 's'}.`;
+
+  return { streak, bestStreak: best, daysWithCheckin, days: days.length, thin, note };
 }
 
 /**
@@ -663,5 +832,13 @@ export function analysisForPrompt(a: LifeAnalysis): string {
     lines.push('Areas flagged by the rules engine:');
     for (const i of a.improvements) lines.push(`  [${i.severity}] ${i.title} — ${i.detail}`);
   }
+  if (a.strengths.length) {
+    lines.push('Supported strengths (do not invent others):');
+    for (const st of a.strengths) lines.push(`  ${st.title} — ${st.evidence}`);
+  }
+  lines.push(`Habit consistency: ${a.consistency.note}`);
+  lines.push(
+    'Rules: describe these as tendencies only, and name the figures you used. If a domain is withheld for too little data, say so rather than speculating about it.',
+  );
   return lines.join('\n');
 }

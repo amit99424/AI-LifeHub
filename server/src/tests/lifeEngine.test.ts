@@ -21,6 +21,7 @@ import {
   computeCorrelations,
   improvementAreas,
   sufficiency,
+  habitConsistency,
   summarisePeriod,
   type LifeDay,
 } from '../services/lifeEngine.js';
@@ -231,7 +232,9 @@ register('lifeEngine: the prompt block carries sample sizes and hides withheld p
 register('lifeEngine: energy and sleep quality are correlated like any other domain', () => {
   const days = Array.from({ length: 20 }, (_, i) => {
     const energy = 1 + (i % 5);
-    return day(i, { energy, score: 30 + energy * 10, sleepQuality: energy, focus: energy });
+    // Energy and sleep quality track each other here, but neither equals focus,
+    // so no pair is a tautology while the relationships stay strong.
+    return day(i, { energy, score: 30 + energy * 10, sleepQuality: energy, focus: energy * 0.9 });
   });
   const res = computeCorrelations(days);
   for (const key of ['energyVsScore', 'sleepQualityVsScore', 'sleepQualityVsFocus']) {
@@ -299,4 +302,83 @@ register('lifeEngine: a thin domain is reported as thin, not as missing', () => 
   assert.equal(res.thin.length, 1);
   assert.match(res.thin[0], /tasks \(3 days\)/);
   assert.match(res.message, /too few days to compare/);
+});
+
+// ── phase 3: strengths, consistency and the period windows ───
+
+register('lifeEngine: strengths are only reported when a number supports them', () => {
+  // Nothing recorded: no strength may be claimed.
+  const empty = Array.from({ length: 14 }, (_, i) => day(i, { score: 0 }));
+  const none = analyseLife({ days: empty, hourly: [], weekday: [], domainsPresent: {} });
+  assert.equal(none.strengths.length, 0);
+
+  // A genuinely strong period does produce them.
+  const good = Array.from({ length: 14 }, (_, i) => day(i, { habitRate: 90, score: 72, tasksCompleted: 3, sleepHours: 7.8 }));
+  const yes = analyseLife({ days: good, hourly: [], weekday: [], domainsPresent: { habits: true } });
+  assert.ok(yes.strengths.length >= 2);
+  for (const st of yes.strengths) assert.ok(st.evidence.length > 0, `${st.key} must name its evidence`);
+});
+
+register('lifeEngine: every strength carries the figures behind it', () => {
+  const days = Array.from({ length: 20 }, (_, i) => day(i, { habitRate: 80, score: 70, tasksCompleted: 2, sleepHours: 8 }));
+  const res = analyseLife({ days, hourly: [], weekday: [], domainsPresent: { habits: true } });
+  for (const st of res.strengths) {
+    assert.match(st.evidence, /\d/, `${st.key} evidence must contain a number`);
+  }
+});
+
+register('lifeEngine: habit consistency counts a real streak and says when it is thin', () => {
+  const thin = habitConsistency(Array.from({ length: 20 }, (_, i) => day(i, { habitRate: i < 2 ? 50 : 0 })));
+  assert.equal(thin.daysWithCheckin, 2);
+  assert.equal(thin.thin, true);
+  assert.match(thin.note, /Only 2 days/);
+
+  const run = habitConsistency(Array.from({ length: 20 }, (_, i) => day(i, { habitRate: i >= 12 ? 60 : 0 })));
+  assert.equal(run.streak, 8);
+  assert.equal(run.bestStreak, 8);
+  assert.equal(run.thin, false);
+  assert.match(run.note, /8 days in a row/);
+
+  const broken = habitConsistency(Array.from({ length: 20 }, (_, i) => day(i, { habitRate: i >= 15 ? 60 : 0 })));
+  assert.equal(broken.streak, 5);
+});
+
+register('lifeEngine: a trend line marks which days actually have data', () => {
+  const days = Array.from({ length: 10 }, (_, i) => day(i, { tasksCompleted: i < 4 ? 2 : 0, score: i < 4 ? 40 : 0 }));
+  const res = analyseLife({ days, hourly: [], weekday: [], domainsPresent: {} });
+  assert.equal(res.trend.length, 10);
+  assert.equal(res.trend.filter((t) => t.hasData).length, 4);
+  assert.equal(res.trend[0].date, days[0].date);
+});
+
+register('lifeEngine: daysWithData does not count an empty day just because it has a score', () => {
+  const days = Array.from({ length: 10 }, (_, i) => day(i, { score: 0 }));
+  const res = analyseLife({ days, hourly: [], weekday: [], domainsPresent: {} });
+  assert.equal(res.current.daysWithData + res.previous.daysWithData, 0);
+});
+
+register('lifeEngine: the prompt block carries strengths and consistency', () => {
+  const days = Array.from({ length: 20 }, (_, i) => day(i, { habitRate: 85, score: 70, tasksCompleted: 2 }));
+  const text = analysisForPrompt(analyseLife({ days, hourly: [], weekday: [], domainsPresent: { habits: true } }));
+  assert.match(text, /Supported strengths/);
+  assert.match(text, /Habit consistency/);
+  assert.match(text, /name the figures you used/);
+});
+
+register('lifeEngine: a pair carrying identical values is withheld, not reported', () => {
+  // Study minutes and the daily score are the same number here, which is what
+  // happened in practice: the score is built partly from study time, so the
+  // correlation was 1.0 by construction and told the user nothing.
+  const days = Array.from({ length: 20 }, (_, i) => day(i, { studyMinutes: 40 + (i % 7) * 10, score: 40 + (i % 7) * 10 }));
+  const res = computeCorrelations(days);
+  assert.equal(res.correlations.find((c) => c.key === 'studyVsScore'), undefined);
+  const w = res.withheld.find((x) => x.key === 'studyVsScore');
+  assert.ok(w, 'studyVsScore should be withheld');
+  assert.match(w!.reason, /same values/);
+});
+
+register('lifeEngine: a genuine relationship between the same two columns still reports', () => {
+  const days = Array.from({ length: 20 }, (_, i) => day(i, { studyMinutes: 30 + (i % 6) * 15, score: 20 + (i % 6) * 12 }));
+  const res = computeCorrelations(days);
+  assert.ok(res.correlations.find((c) => c.key === 'studyVsScore'), 'a real relationship must not be withheld');
 });

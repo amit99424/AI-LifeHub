@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -14,6 +14,8 @@ import {
   Plus,
   Quote,
   RefreshCw,
+  Settings2,
+  Eye,
   Smile,
   Sparkles,
   Target,
@@ -39,11 +41,12 @@ import {
   YAxis,
 } from 'recharts';
 import { api } from '@/lib/api';
-import type { DashboardResponse, Insight } from '@/lib/types';
+import type { DashboardResponse, Insight, WidgetId } from '@/lib/types';
 import { Badge, Button, Card, CardHeader, EmptyState, ErrorState, ProgressBar, Skeleton, toast } from '@/components/ui';
 import { AiConfigBanner } from '@/components/AiConfigBanner';
 import { useAuth } from '@/lib/auth';
 import { MOOD_META, PRIORITY_STYLES, cn, formatDate, formatMinutes, relativeTime } from '@/lib/utils';
+import { ComparisonStrip, DashboardCustomiser, DashboardWidget, WIDGET_SPAN } from '@/components/dashboard/Widgets';
 
 const INSIGHT_ICON: Record<string, typeof Sparkles> = {
   PRODUCTIVITY: TrendingUp,
@@ -161,6 +164,7 @@ function InsightCard({ insight, onDismiss, onPin }: { insight: Insight; onDismis
 export default function Dashboard() {
   const { user } = useAuth();
   const qc = useQueryClient();
+  const [customising, setCustomising] = useState(false);
 
   const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
     queryKey: ['dashboard'],
@@ -239,6 +243,9 @@ export default function Dashboard() {
 
   const s = data.summary;
   const score = s.score;
+  // The server resolved the widget list (occupation default merged with the
+  // person's saved layout). The page renders it; it never reorders anything.
+  const widgets: WidgetId[] = data.widgets ?? data.occupation.profile.widgets;
 
   return (
     <div className="space-y-5">
@@ -298,6 +305,9 @@ export default function Dashboard() {
               <Link to="/assistant" className="btn-secondary h-9 px-3.5 text-[13px]">
                 <Sparkles className="h-4 w-4" /> Ask about my week
               </Link>
+              <button onClick={() => setCustomising((c) => !c)} className="btn-secondary h-9 px-3.5 text-[13px]">
+                <Settings2 className="h-4 w-4" /> Customise
+              </button>
             </div>
           </div>
 
@@ -325,268 +335,42 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* stat row */}
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard icon={CheckCircle2} label="Tasks today" value={`${s.tasksCompleted} done`} sub={`${s.tasksPending} pending · ${data.counts.IN_PROGRESS ?? 0} in progress`} tone="success" to="/tasks" />
-        <StatCard icon={Activity} label="Habits" value={`${s.habitsDone}/${s.habitsActive}`} sub={s.habitsActive ? `${s.habitRate}% of today’s habits` : 'No habits yet'} tone="brand" to="/habits" />
-        <StatCard icon={Flame} label="Current streak" value={`${data.streaks.current} day${data.streaks.current === 1 ? '' : 's'}`} sub={`Longest ${data.streaks.longest} days`} tone="warning" />
-        <StatCard icon={Timer} label="Focus today" value={formatMinutes(s.focusMinutes)} sub={`${formatMinutes(data.totals.focusMinutes)} in 30 days`} tone="info" to="/sessions" />
-      </div>
+      {/* comparisons: the same numbers the analysis reads */}
+      {data.comparisons && (
+        <div className="grid gap-3 sm:grid-cols-3">
+          <ComparisonStrip label="Today vs yesterday" comparison={data.comparisons.day} />
+          <ComparisonStrip label="This week vs last" comparison={data.comparisons.week} />
+          <ComparisonStrip label="This month vs last" comparison={data.comparisons.month} />
+        </div>
+      )}
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        {/* weekly chart */}
-        <Card className="lg:col-span-2">
-          <CardHeader
-            title="Last 14 days"
-            subtitle="Task completions, focus hours and daily score"
-            icon={<BarChart3 className="h-4.5 w-4.5" />}
-            action={
-              <Link to="/analytics" className="text-[11px] font-semibold text-brand-600 hover:underline dark:text-brand-400">
-                Full analytics →
-              </Link>
-            }
-          />
-          {weeklyChart.some((d) => d.tasks || d.focus) ? (
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={weeklyChart} margin={{ top: 4, right: 8, left: -18, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="gTasks" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#7f56ff" stopOpacity={0.35} />
-                      <stop offset="100%" stopColor="#7f56ff" stopOpacity={0} />
-                    </linearGradient>
-                    <linearGradient id="gFocus" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.28} />
-                      <stop offset="100%" stopColor="#3b82f6" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgb(var(--border))" vertical={false} />
-                  <XAxis dataKey="label" tickLine={false} axisLine={false} interval="preserveStartEnd" />
-                  <YAxis tickLine={false} axisLine={false} width={30} />
-                  <Tooltip />
-                  <Area type="monotone" dataKey="tasks" name="Tasks done" stroke="#7f56ff" strokeWidth={2} fill="url(#gTasks)" />
-                  <Area type="monotone" dataKey="focus" name="Focus (h)" stroke="#3b82f6" strokeWidth={2} fill="url(#gFocus)" />
-                  <Line type="monotone" dataKey="score" name="Score" stroke="#f59e0b" strokeWidth={2} dot={false} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          ) : (
-            <EmptyState
-              icon={<BarChart3 className="h-5 w-5" />}
-              title="No activity in the last 14 days"
-              description="Complete a task or run a focus session and this chart starts filling in automatically."
+      {customising && <DashboardCustomiser widgets={widgets} onClose={() => setCustomising(false)} />}
+
+      {/* widget grid, in the order the server resolved */}
+      <div className="grid gap-3 lg:grid-cols-3">
+        {widgets.map((id) => (
+          <div key={id} className={WIDGET_SPAN[id] ?? 'lg:col-span-1'}>
+            <DashboardWidget
+              id={id}
+              data={data}
+              onInsightAction={(iid, patch) => insightAction.mutate({ id: iid, patch })}
+              onGenerate={() => generate.mutate()}
+              generating={generate.isPending}
             />
-          )}
-        </Card>
-
-        {/* AI insights */}
-        <Card>
-          <CardHeader
-            title="AI insights"
-            subtitle="Generated from your records"
-            icon={<Sparkles className="h-4.5 w-4.5" />}
-            action={
-              <Button size="sm" variant="ghost" onClick={() => generate.mutate()} loading={generate.isPending} icon={<RefreshCw className="h-3.5 w-3.5" />}>
-                {data.insights.length ? 'Refresh' : 'Generate'}
-              </Button>
-            }
-          />
-          <div className="space-y-2.5">
-            <AiConfigBanner compact />
-            {data.insights.length === 0 ? (
-              <EmptyState
-                icon={<Sparkles className="h-5 w-5" />}
-                title="No insights yet"
-                description="Insights appear once you have a few days of activity — at least 5 completed tasks or habit check-ins, and more for mood or journal analysis."
-                action={
-                  <Button size="sm" onClick={() => generate.mutate()} loading={generate.isPending}>
-                    Generate now
-                  </Button>
-                }
-              />
-            ) : (
-              data.insights.slice(0, 3).map((i) => (
-                <InsightCard
-                  key={i.id}
-                  insight={i}
-                  onDismiss={() => insightAction.mutate({ id: i.id, patch: { dismissed: true } })}
-                  onPin={() => insightAction.mutate({ id: i.id, patch: { pinned: !i.pinned } })}
-                />
-              ))
-            )}
-            {data.insights.length > 0 && (
-              <Link to="/assistant" className="block pt-1 text-center text-[11px] font-semibold text-brand-600 hover:underline dark:text-brand-400">
-                Ask the assistant for more →
-              </Link>
-            )}
           </div>
-        </Card>
+        ))}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        {/* quick habits */}
-        <Card>
-          <CardHeader
-            title="Today’s habits"
-            subtitle={data.habitsToday.total ? `${data.habitsToday.done} of ${data.habitsToday.total} done` : 'One tap each'}
-            icon={<Target className="h-4.5 w-4.5" />}
-            action={
-              <Link to="/habits" className="text-[11px] font-semibold text-brand-600 hover:underline dark:text-brand-400">
-                Manage
-              </Link>
-            }
+      {widgets.length === 0 && (
+        <Card className="p-6">
+          <EmptyState
+            icon={<Eye className="h-5 w-5" />}
+            title="Every widget is hidden"
+            description="Nothing is selected to show. Open the customiser and switch a few back on — the daily overview is a good place to start."
+            action={<Button onClick={() => setCustomising(true)}>Customise dashboard</Button>}
           />
-          {habitList?.habits.length ? (
-            <div className="space-y-1.5">
-              {habitList.habits.slice(0, 6).map((h) => (
-                <button
-                  key={h.id}
-                  onClick={() => checkHabit.mutate(h.id)}
-                  className={cn(
-                    'flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition',
-                    h.doneToday
-                      ? 'border-emerald-200 bg-emerald-50/70 dark:border-emerald-500/25 dark:bg-emerald-500/10'
-                      : 'border-[rgb(var(--border))] hover:border-brand-300 hover:bg-brand-50/40 dark:hover:bg-brand-500/5',
-                  )}
-                >
-                  <span
-                    className={cn(
-                      'flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition',
-                      h.doneToday ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-ink-300 dark:border-ink-600',
-                    )}
-                  >
-                    {h.doneToday && <CheckCircle2 className="h-3.5 w-3.5" />}
-                  </span>
-                  <span className={cn('flex-1 text-[13px] font-medium', h.doneToday ? 'text-emerald-800 line-through dark:text-emerald-300' : 'text-ink-700 dark:text-ink-200')}>
-                    {h.name}
-                  </span>
-                  {h.streak > 0 && (
-                    <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-amber-600 dark:text-amber-400">
-                      <Flame className="h-3 w-3" /> {h.streak}
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
-          ) : (
-            <EmptyState
-              icon={<Target className="h-5 w-5" />}
-              title="No habits yet"
-              description="Start with one small daily habit. Checking it in takes a single click."
-              action={
-                <Link to="/habits" className="btn-primary h-8 px-3 text-xs">
-                  <Plus className="h-3.5 w-3.5" /> Add habit
-                </Link>
-              }
-            />
-          )}
         </Card>
-
-        {/* mood + deadlines */}
-        <Card>
-          <CardHeader title="Mood" subtitle="Self-reported, one tap a day" icon={<Smile className="h-4.5 w-4.5" />} action={<Link to="/mood" className="text-[11px] font-semibold text-brand-600 hover:underline dark:text-brand-400">Log</Link>} />
-          {data.mood ? (
-            <div className="flex items-center gap-4">
-              <div className="text-5xl">{MOOD_META[data.mood.level].emoji}</div>
-              <div>
-                <p className="font-display text-lg font-extrabold text-ink-900 dark:text-white">{MOOD_META[data.mood.level].label}</p>
-                <p className="text-xs text-ink-500">Logged today{data.mood.focus ? ` · focus ${data.mood.focus}/5` : ''}</p>
-                {data.mood.note && <p className="mt-1 line-clamp-2 text-xs italic text-ink-500">“{data.mood.note}”</p>}
-              </div>
-            </div>
-          ) : (
-            <EmptyState icon={<Smile className="h-5 w-5" />} title="Not logged today" description="Pick one of five faces — optional note, no questions." />
-          )}
-          {moodPie.length > 0 && (
-            <div className="mt-4 flex items-center gap-2">
-              <div className="h-24 w-24">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie data={moodPie} dataKey="value" innerRadius={26} outerRadius={44} paddingAngle={2} stroke="none">
-                      {moodPie.map((m) => (
-                        <Cell key={m.name} fill={m.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="flex-1 space-y-1">
-                {moodPie.map((m) => (
-                  <div key={m.name} className="flex items-center gap-1.5 text-[11px] text-ink-600 dark:text-ink-300">
-                    <span className="h-2 w-2 rounded-full" style={{ background: m.color }} />
-                    {m.name}
-                    <span className="ml-auto font-semibold">{m.value}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          <div className="mt-4 border-t border-[rgb(var(--border))] pt-3">
-            <div className="mb-2 flex items-center justify-between">
-              <p className="text-[11px] font-bold uppercase tracking-wide text-ink-400">Upcoming deadlines</p>
-              <CalendarClock className="h-3.5 w-3.5 text-ink-400" />
-            </div>
-            {data.deadlines.length ? (
-              <div className="space-y-1.5">
-                {data.deadlines.slice(0, 4).map((d) => (
-                  <Link key={d.id} to="/tasks" className="flex items-center gap-2 rounded-lg px-1.5 py-1 text-[12px] hover:bg-ink-50 dark:hover:bg-ink-800/60">
-                    <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', d.overdue ? 'bg-rose-500' : 'bg-brand-500')} />
-                    <span className="flex-1 truncate text-ink-700 dark:text-ink-200">{d.title}</span>
-                    <span className={cn('badge', PRIORITY_STYLES[d.priority])}>{d.priority}</span>
-                    <span className={cn('shrink-0 text-[10px] font-semibold', d.overdue ? 'text-rose-600' : 'text-ink-400')}>
-                      {d.dueDate ? formatDate(new Date(d.dueDate)) : '—'}
-                    </span>
-                  </Link>
-                ))}
-              </div>
-            ) : (
-              <p className="py-2 text-[11px] text-ink-400">Nothing scheduled. Add a due date to a task to see it here.</p>
-            )}
-          </div>
-        </Card>
-
-        {/* heatmap + best time */}
-        <Card>
-          <CardHeader title="Consistency" subtitle="Last 5 weeks of activity" icon={<Trophy className="h-4.5 w-4.5" />} />
-          <div className="grid grid-cols-7 gap-1.5">
-            {data.heatmap.map((h) => {
-              const levels = ['bg-ink-100 dark:bg-ink-800', 'bg-brand-100 dark:bg-brand-500/20', 'bg-brand-300 dark:bg-brand-500/40', 'bg-brand-500 dark:bg-brand-500/70', 'bg-brand-700 dark:bg-brand-400'];
-              return (
-                <div
-                  key={h.date}
-                  title={`${h.date} · score ${h.score}`}
-                  className={cn('aspect-square rounded-[4px] transition hover:ring-2 hover:ring-brand-400/50', levels[h.level])}
-                />
-              );
-            })}
-          </div>
-          <div className="mt-3 flex items-center justify-between text-[10px] text-ink-400">
-            <span>5 weeks ago</span>
-            <span className="flex items-center gap-1">
-              Less
-              {[0, 1, 2, 3, 4].map((l) => (
-                <span key={l} className={cn('h-2 w-2 rounded-[2px]', ['bg-ink-100 dark:bg-ink-800', 'bg-brand-100 dark:bg-brand-500/20', 'bg-brand-300 dark:bg-brand-500/40', 'bg-brand-500 dark:bg-brand-500/70', 'bg-brand-700 dark:bg-brand-400'][l])} />
-              ))}
-              More
-            </span>
-          </div>
-
-          <div className="mt-4 border-t border-[rgb(var(--border))] pt-3">
-            <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-ink-400">Completions by time of day</p>
-            <div className="h-24">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={data.hourly.filter((h) => h.hour % 3 === 0).map((h) => ({ hour: `${h.hour}:00`, completions: h.completions }))} margin={{ top: 0, right: 0, left: -28, bottom: 0 }}>
-                  <XAxis dataKey="hour" tickLine={false} axisLine={false} interval={1} />
-                  <YAxis tickLine={false} axisLine={false} width={28} />
-                  <Tooltip />
-                  <Bar dataKey="completions" name="Tasks done" fill="#7f56ff" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        </Card>
-      </div>
+      )}
 
       <div className="flex items-center justify-between rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--surface))]/60 px-4 py-2.5">
         <p className="text-[11px] text-ink-500">

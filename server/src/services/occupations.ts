@@ -27,17 +27,25 @@ export const OCCUPATION_TYPES = [
 export type OccupationType = (typeof OCCUPATION_TYPES)[number];
 
 /** Which widget ids a dashboard may show, in the profile's preferred order. */
-export type WidgetId =
-  | 'today'
-  | 'score'
-  | 'tasks'
-  | 'habits'
-  | 'focus'
-  | 'mood'
-  | 'wellness'
-  | 'deadlines'
-  | 'insight'
-  | 'week';
+export const WIDGET_IDS = [
+  'today',
+  'score',
+  'tasks',
+  'habits',
+  'focus',
+  'mood',
+  'wellness',
+  'deadlines',
+  'insight',
+  'week',
+  'trend',
+  'consistency',
+  'strengths',
+  'correlations',
+  'timeofday',
+] as const;
+
+export type WidgetId = (typeof WIDGET_IDS)[number];
 
 export interface OccupationProfile {
   type: OccupationType;
@@ -83,7 +91,7 @@ export const OCCUPATION_PROFILES: Record<OccupationType, OccupationProfile> = {
     nouns: { project: 'Subject', projects: 'Subjects', session: 'Study session', sessions: 'Study sessions', sessionLabel: 'Subject' },
     taskCategories: ['Assignment', 'Exam prep', 'Reading', 'Lab work', 'Project', 'Revision'],
     suggestedHabits: ['Study 2 hours', 'Revise notes', ...COMMON_HABITS],
-    widgets: ['today', 'focus', 'tasks', 'habits', 'deadlines', 'score', 'mood', 'insight', 'week', 'wellness'],
+    widgets: ['today', 'focus', 'tasks', 'habits', 'deadlines', 'score', 'mood', 'insight', 'week', 'wellness', 'trend', 'consistency', 'strengths', 'correlations', 'timeofday'],
     aiFocus: 'academic load, exam readiness, revision spacing and the balance between study hours and rest',
     billableHours: false,
   },
@@ -96,7 +104,7 @@ export const OCCUPATION_PROFILES: Record<OccupationType, OccupationProfile> = {
     nouns: { project: 'Project', projects: 'Projects', session: 'Work session', sessions: 'Work sessions', sessionLabel: 'Project' },
     taskCategories: ['Work', 'Meetings', 'Deep work', 'Admin', 'Learning', 'Personal'],
     suggestedHabits: ['Plan tomorrow', 'No work after 7pm', ...COMMON_HABITS],
-    widgets: ['today', 'tasks', 'focus', 'score', 'deadlines', 'habits', 'wellness', 'mood', 'insight', 'week'],
+    widgets: ['today', 'tasks', 'focus', 'score', 'deadlines', 'habits', 'wellness', 'mood', 'insight', 'week', 'trend', 'consistency', 'strengths', 'correlations', 'timeofday'],
     aiFocus: 'workload against deadlines, meeting load, focus blocks and signs of work bleeding into rest',
     billableHours: false,
   },
@@ -109,7 +117,7 @@ export const OCCUPATION_PROFILES: Record<OccupationType, OccupationProfile> = {
     nouns: { project: 'Client project', projects: 'Client projects', session: 'Work session', sessions: 'Work sessions', sessionLabel: 'Client' },
     taskCategories: ['Client work', 'Prospecting', 'Admin', 'Invoicing', 'Portfolio', 'Learning'],
     suggestedHabits: ['Send one outreach', 'Log billable hours', ...COMMON_HABITS],
-    widgets: ['today', 'focus', 'tasks', 'deadlines', 'score', 'habits', 'week', 'insight', 'mood', 'wellness'],
+    widgets: ['today', 'focus', 'tasks', 'deadlines', 'score', 'habits', 'week', 'insight', 'mood', 'wellness', 'trend', 'consistency', 'strengths', 'correlations', 'timeofday'],
     aiFocus: 'billable hours against time spent, deadline risk across clients, and the gap between busy and productive',
     billableHours: true,
   },
@@ -122,7 +130,7 @@ export const OCCUPATION_PROFILES: Record<OccupationType, OccupationProfile> = {
     nouns: { project: 'Initiative', projects: 'Initiatives', session: 'Work session', sessions: 'Work sessions', sessionLabel: 'Area' },
     taskCategories: ['Operations', 'Finance', 'Team', 'Sales', 'Growth', 'Admin'],
     suggestedHabits: ['Review the numbers', 'One growth action', ...COMMON_HABITS],
-    widgets: ['today', 'score', 'tasks', 'deadlines', 'week', 'focus', 'habits', 'insight', 'wellness', 'mood'],
+    widgets: ['today', 'score', 'tasks', 'deadlines', 'week', 'focus', 'habits', 'insight', 'wellness', 'mood', 'trend', 'consistency', 'strengths', 'correlations', 'timeofday'],
     aiFocus: 'where your attention is going versus what moves the business, delegation load, and personal recovery',
     billableHours: false,
   },
@@ -135,7 +143,7 @@ export const OCCUPATION_PROFILES: Record<OccupationType, OccupationProfile> = {
     nouns: { project: 'Venture', projects: 'Ventures', session: 'Build session', sessions: 'Build sessions', sessionLabel: 'Venture' },
     taskCategories: ['Build', 'Validate', 'Talk to users', 'Fundraising', 'Growth', 'Admin'],
     suggestedHabits: ['Talk to one user', 'Ship something small', ...COMMON_HABITS],
-    widgets: ['today', 'tasks', 'focus', 'score', 'insight', 'deadlines', 'habits', 'week', 'mood', 'wellness'],
+    widgets: ['today', 'tasks', 'focus', 'score', 'insight', 'deadlines', 'habits', 'week', 'mood', 'wellness', 'trend', 'consistency', 'strengths', 'correlations', 'timeofday'],
     aiFocus: 'whether effort is going to validated work, context switching between ventures, and burnout risk from long hours',
     billableHours: false,
   },
@@ -148,7 +156,7 @@ export const OCCUPATION_PROFILES: Record<OccupationType, OccupationProfile> = {
     nouns: { project: 'Application', projects: 'Applications', session: 'Prep session', sessions: 'Prep sessions', sessionLabel: 'Role' },
     taskCategories: ['Application', 'Interview prep', 'Networking', 'Skill practice', 'Portfolio', 'Follow-up'],
     suggestedHabits: ['One application a day', 'Practice 30 minutes', ...COMMON_HABITS],
-    widgets: ['today', 'tasks', 'habits', 'score', 'focus', 'deadlines', 'insight', 'mood', 'week', 'wellness'],
+    widgets: ['today', 'tasks', 'habits', 'score', 'focus', 'deadlines', 'insight', 'mood', 'week', 'wellness', 'trend', 'consistency', 'strengths', 'correlations', 'timeofday'],
     aiFocus: 'application volume and consistency, interview preparation, momentum through rejections and mood over time',
     billableHours: false,
   },
@@ -161,7 +169,7 @@ export const OCCUPATION_PROFILES: Record<OccupationType, OccupationProfile> = {
     nouns: { project: 'Course', projects: 'Courses', session: 'Teaching prep', sessions: 'Teaching prep', sessionLabel: 'Course' },
     taskCategories: ['Lesson prep', 'Marking', 'Classes', 'Admin', 'Student support', 'Planning'],
     suggestedHabits: ['Prep tomorrow', 'Leave work at work', ...COMMON_HABITS],
-    widgets: ['today', 'tasks', 'focus', 'habits', 'score', 'wellness', 'deadlines', 'mood', 'insight', 'week'],
+    widgets: ['today', 'tasks', 'focus', 'habits', 'score', 'wellness', 'deadlines', 'mood', 'insight', 'week', 'trend', 'consistency', 'strengths', 'correlations', 'timeofday'],
     aiFocus: 'preparation load, marking backlog, and how term-time pressure affects sleep and recovery',
     billableHours: false,
   },
@@ -174,7 +182,7 @@ export const OCCUPATION_PROFILES: Record<OccupationType, OccupationProfile> = {
     nouns: { project: 'Project', projects: 'Projects', session: 'Session', sessions: 'Sessions', sessionLabel: 'Area' },
     taskCategories: ['Work', 'Personal', 'Learning', 'Health', 'Admin', 'Other'],
     suggestedHabits: COMMON_HABITS,
-    widgets: ['today', 'tasks', 'habits', 'score', 'focus', 'mood', 'deadlines', 'week', 'wellness', 'insight'],
+    widgets: ['today', 'tasks', 'habits', 'score', 'focus', 'mood', 'deadlines', 'week', 'wellness', 'insight', 'trend', 'consistency', 'strengths', 'correlations', 'timeofday'],
     aiFocus: 'the balance across your tasks, habits, focus, mood and sleep',
     billableHours: false,
   },
@@ -270,6 +278,34 @@ export function mergeWidgetOrder(preferred: WidgetId[], saved: string[] | null |
   const cleanSaved = (saved ?? []).filter((w): w is WidgetId => known.has(w));
   const missing = preferred.filter((w) => !cleanSaved.includes(w));
   return [...cleanSaved, ...missing];
+}
+
+export interface DashboardLayout {
+  /** Null means "use the profile's order". */
+  order: WidgetId[] | null;
+  hidden: WidgetId[];
+}
+
+/**
+ * Read a stored layout without trusting it.
+ *
+ * The column is text, so it can hold anything: a value from a newer build, a
+ * half-written row, or something a person pasted in. Anything unrecognised is
+ * dropped rather than thrown, because a broken layout must never take the
+ * dashboard down with it.
+ */
+export function parseLayout(raw: string | null | undefined): DashboardLayout {
+  if (!raw) return { order: null, hidden: [] };
+  try {
+    const parsed = JSON.parse(raw) as { order?: unknown; hidden?: unknown };
+    const known = new Set<string>(WIDGET_IDS);
+    const asIds = (v: unknown): WidgetId[] =>
+      Array.isArray(v) ? Array.from(new Set(v.filter((x): x is WidgetId => typeof x === 'string' && known.has(x)))) : [];
+    const order = asIds(parsed.order);
+    return { order: order.length ? order : null, hidden: asIds(parsed.hidden) };
+  } catch {
+    return { order: null, hidden: [] };
+  }
 }
 
 /** The block appended to the AI system prompt for this person. */

@@ -12,6 +12,10 @@ export interface DayStat {
   date: string;
   tasksCompleted: number;
   tasksCreated: number;
+  /** Still open (TODO or IN_PROGRESS) and due on or before this day. */
+  tasksPending: number;
+  /** Still open and past their due date as of this day. */
+  tasksOverdue: number;
   habitsDone: number;
   habitsTotal: number;
   focusMinutes: number;
@@ -228,6 +232,21 @@ export async function buildAnalytics(
     const k = dateKey(l.date);
     habitsByDay.set(k, (habitsByDay.get(k) ?? 0) + 1);
   }
+  // Backlog as of each day: tasks still open now whose due date had passed by
+  // then. It is a lower bound (a task closed since is not counted), which is
+  // why it is only ever used as a direction, never a precise figure.
+  const openByDueDay = new Map<string, number>();
+  for (const t of openTasks) {
+    if (!t.dueDate) continue;
+    const k = dateKey(t.dueDate);
+    openByDueDay.set(k, (openByDueDay.get(k) ?? 0) + 1);
+  }
+  const overdueAt = (k: string): number => {
+    let n = 0;
+    for (const [due, count] of openByDueDay) if (due <= k) n += count;
+    return n;
+  };
+
   const wellnessByDay = new Map<string, (typeof activities)[number]>();
   for (const a of activities) wellnessByDay.set(dateKey(a.date), a);
   const focusByDayMood = new Map<string, number>();
@@ -256,6 +275,8 @@ export async function buildAnalytics(
       date: k,
       tasksCompleted,
       tasksCreated,
+      tasksPending: overdueAt(k),
+      tasksOverdue: overdueAt(k),
       habitsDone,
       habitsTotal: activeHabitCount,
       focusMinutes,

@@ -10,7 +10,9 @@ import {
   classifyOccupation,
   mergeWidgetOrder,
   occupationDisplayName,
+  parseLayout,
   resolveOccupation,
+  WIDGET_IDS,
   type OccupationType,
 } from '../services/occupations.js';
 
@@ -184,6 +186,43 @@ usersRouter.patch(
       update: data,
     });
     res.json({ settings });
+  }),
+);
+
+// ── dashboard layout ─────────────────────────────────────────
+// The widget order and visibility a person chose. Stored as JSON so it is one
+// opaque value; validated here against the ids this build knows, so a stale
+// tab cannot save a widget that no longer exists and break the next render.
+const layoutSchema = z.object({
+  order: z.array(z.enum(WIDGET_IDS)).max(WIDGET_IDS.length).optional(),
+  hidden: z.array(z.enum(WIDGET_IDS)).max(WIDGET_IDS.length).optional(),
+});
+
+usersRouter.get(
+  '/dashboard-layout',
+  ah(async (req, res) => {
+    const settings = await prisma.userSettings.findUnique({
+      where: { userId: req.user!.id },
+      select: { dashboardLayout: true },
+    });
+    res.json({ layout: parseLayout(settings?.dashboardLayout ?? null) });
+  }),
+);
+
+usersRouter.put(
+  '/dashboard-layout',
+  validate({ body: layoutSchema }),
+  ah(async (req, res) => {
+    const body = req.body as z.infer<typeof layoutSchema>;
+    const order = body.order ? mergeWidgetOrder(body.order, null) : undefined;
+    const hidden = body.hidden ? Array.from(new Set(body.hidden)) : undefined;
+    const value = JSON.stringify({ order: order ?? null, hidden: hidden ?? [] });
+    await prisma.userSettings.upsert({
+      where: { userId: req.user!.id },
+      create: { userId: req.user!.id, dashboardLayout: value },
+      update: { dashboardLayout: value },
+    });
+    res.json({ layout: parseLayout(value) });
   }),
 );
 

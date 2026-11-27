@@ -746,6 +746,46 @@ clears only this account's demo rows first.
 
 ---
 
+## The dashboard and the life engine
+
+`server/src/services/lifeEngine.ts` is the single spine the dashboard, the
+analytics page and the AI all read. It is pure functions over `LifeDay` rows --
+no Prisma, no clock -- so the same numbers produce the same sentences
+everywhere. `GET /api/analytics/dashboard` returns the whole analysis alongside
+the raw daily stats, and the dashboard renders it without doing any arithmetic
+of its own.
+
+**What it will not do.**
+
+- A correlation is reported only when both sides have at least **14 days**
+  recorded together (`MIN_SAMPLE`). Below that the pair appears in `withheld`
+  with its count, and the UI says how many days are missing instead of drawing
+  a line.
+- A pair whose two columns carry identical values on more than 90% of days is
+  withheld as a tautology. This matters in practice: study minutes and the
+  daily score were correlated at r=1.0 because the score is partly built from
+  study minutes, which told the user nothing.
+- "Best hour" ranks completions **per active day** and needs 7 days behind a
+  bucket; below that it says the hint rests on too few days.
+- A period comparison needs recorded days on **both** sides. Otherwise it
+  reports `available: false` with a reason, rather than a percentage change
+  from nothing.
+- A day counts as tracked only if something was recorded on it. A computed
+  score is not evidence, so a new account is told "0 days" rather than "30".
+- Improvements are measured against the person's own recent average, never a
+  population benchmark, and no sentence claims that one thing caused another.
+- The synthetic dataset in `server/prisma/datasets/` is never blended with real
+  records. Insights generated from it carry `isDemo` and the UI labels them
+  "sample data".
+
+**Widgets and layout.** The occupation profile decides which widgets exist and
+their default order. `GET /api/users/dashboard-layout` and `PUT` the same path
+store the person's own order and hidden list in `UserSettings.dashboardLayout`
+(one nullable JSON column). `parseLayout()` drops unknown widget ids rather than
+throwing, so a layout saved by a newer build cannot break an older one. The
+dashboard response returns the merged, filtered widget list -- the client
+renders it and never re-derives it.
+
 ## Running the app
 
 | Command (from repo root) | What it does |

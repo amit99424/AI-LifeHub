@@ -3,9 +3,9 @@ import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { ah, validate } from '../lib/http.js';
 import { requireAuth, userTz } from '../middleware/auth.js';
-import { occupationDisplayName, resolveOccupation } from '../services/occupations.js';
+import { mergeWidgetOrder, occupationDisplayName, parseLayout, resolveOccupation, WIDGET_IDS } from '../services/occupations.js';
 import { buildAnalytics } from '../services/analytics.js';
-import { analyseLife, type LifeDay } from '../services/lifeEngine.js';
+import { analyseLife, summarisePeriod, type LifeDay } from '../services/lifeEngine.js';
 import { addDaysKey, endOfMonthKey, startOfMonthKey, todayKey } from '../lib/dates.js';
 
 export const analyticsRouter = Router();
@@ -92,10 +92,9 @@ analyticsRouter.get(
       sleepQuality: d.wellness.sleepQuality,
       habitRate: d.habitsTotal > 0 ? Math.round((d.habitsDone / d.habitsTotal) * 100) : null,
       tasksCompleted: d.tasksCompleted,
-      // Overdue counts are computed elsewhere; the dashboard does not need
-      // them here, and a zero would be a claim we cannot back.
-      tasksOverdue: null,
+      tasksOverdue: d.tasksOverdue,
     }));
+
     const analysis = analyseLife({
       days: lifeDays,
       hourly: full.hourly,
@@ -109,14 +108,47 @@ analyticsRouter.get(
       },
     });
 
+    // Which widgets to show, in which order, with the saved layout applied.
+    // The client renders this list; it never re-derives it.
+    const savedSettings = await prisma.userSettings.findUnique({
+      where: { userId: req.user!.id },
+      select: { dashboardLayout: true },
+    });
+    const layout = parseLayout(savedSettings?.dashboardLayout ?? null);
+    const resolvedOccupation = resolveOccupation({
+      occupationType: profile?.occupationType ?? null,
+      occupation: profile?.occupation ?? null,
+      customLabel: occupationLabel?.label ?? null,
+    });
+    const widgetOrder = mergeWidgetOrder(resolvedOccupation.profile.widgets, layout.order).filter(
+      (w) => !layout.hidden.includes(w),
+    );
+
+    // Daily / weekly / monthly comparisons, computed here so every surface
+    // reads the same numbers. Each window is compared with the one before it.
+    // Windows come from `lifeDays`, the same array the analysis reads, so a
+    // comparison can never be computed from a different set of days.
+    const win = (n: number, offset = 0) => lifeDays.slice(lifeDays.length - (n + offset), lifeDays.length - offset || undefined);
+    const comparisons = {
+      day: compareWindows(win(1), win(1, 1), 'today vs yesterday'),
+      week: compareWindows(win(7), win(7, 7), 'last 7 days vs the 7 before'),
+      month: compareWindows(win(30), win(30, 30), 'last 30 days vs the 30 before'),
+    };
+
     const now = new Date();
     res.json({
+      comparisons,
+      widgets: widgetOrder,
+      widgetLayout: { order: layout.order, hidden: layout.hidden, available: WIDGET_IDS },
       life: {
         sufficiency: analysis.sufficiency,
         correlations: analysis.correlations,
         bestTime: analysis.bestTime,
         deltas: analysis.deltas,
         improvements: analysis.improvements,
+        strengths: analysis.strengths,
+        consistency: analysis.consistency,
+        trend: analysis.trend,
         current: analysis.current,
         previous: analysis.previous,
       },
@@ -126,20 +158,13 @@ analyticsRouter.get(
       primaryGoal: profile?.primaryGoal ?? null,
       // The dashboard renders itself from this: labels, category chips and
       // widget order all come from the occupation profile.
-      occupation: (() => {
-        const resolved = resolveOccupation({
-          occupationType: profile?.occupationType ?? null,
-          occupation: profile?.occupation ?? null,
-          customLabel: occupationLabel?.label ?? null,
-        });
-        return {
-          type: resolved.type,
-          profile: resolved.profile,
-          source: resolved.source,
-          displayName: occupationDisplayName(resolved.profile, occupationLabel?.label),
-          needsConfirmation: resolved.source !== 'typed',
-        };
-      })(),
+      occupation: {
+        type: resolvedOccupation.type,
+        profile: resolvedOccupation.profile,
+        source: resolvedOccupation.source,
+        displayName: occupationDisplayName(resolvedOccupation.profile, occupationLabel?.label),
+        needsConfirmation: resolvedOccupation.source !== 'typed',
+      },
       summary: full.today,
       streaks: full.streaks,
       week: full.weekly.at(-1) ?? null,
@@ -172,3 +197,53 @@ analyticsRouter.get(
     });
   }),
 );
+
+/**
+ * Compare two windows of days and report only what the data supports.
+ *
+ * Both sides must have at least one recorded day, otherwise the comparison is
+ * reported as unavailable rather than as a change. That is the difference
+ * between "your focus time fell 40%" and "you recorded nothing yesterday".
+ */
+function compareWindows(current: LifeDay[], previous: LifeDay[], label: string) {
+  const cur = summarisePeriod(current);
+  const prev = summarisePeriod(previous);
+  const hasBoth = cur.daysWithData > 0 && prev.daysWithData > 0;
+
+  const pick = (s: typeof cur) => ({
+    score: s.score,
+    tasksCompleted: s.tasksCompleted,
+    focusMinutes: s.focusMinutes,
+    habitRate: s.habitRate,
+    mood: s.mood,
+    sleepHours: s.sleepHours,
+    stress: s.stress,
+    energy: s.energy,
+  });
+
+  const currentValues = pick(cur);
+  const previousValues = pick(prev);
+  const changes = Object.entries(currentValues).map(([key, value]) => {
+    const before = previousValues[key as keyof typeof previousValues];
+    const change = value !== null && before !== null ? Math.round((value - before) * 100) / 100 : null;
+    return {
+      key,
+      current: value,
+      previous: before,
+      change,
+      direction: change === null ? 'unknown' : change > 0 ? 'up' : change < 0 ? 'down' : 'flat',
+    };
+  });
+
+  return {
+    label,
+    days: current.length,
+    available: hasBoth,
+    note: hasBoth
+      ? `Compared ${cur.daysWithData} recorded days with ${prev.daysWithData}.`
+      : 'Not enough recorded days on both sides to compare. Nothing is shown rather than a change that is not there.',
+    current: currentValues,
+    previous: previousValues,
+    changes,
+  };
+}

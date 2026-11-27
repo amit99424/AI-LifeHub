@@ -136,6 +136,11 @@ model UserSettings {
   moodTrackingOptIn  Boolean  @default(true)
   journalPrivacyNote Boolean  @default(true)
   demoDataLoaded     Boolean  @default(false)
+
+  // Phase 3: the dashboard's own layout. Kept as a JSON string rather than a
+  // table because it is one opaque value per user that nothing queries into.
+  // Null means "use the occupation's default order".
+  dashboardLayout    String?  @db.VarChar(2000)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 }

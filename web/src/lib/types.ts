@@ -294,9 +294,6 @@ export type OccupationType =
   | 'TEACHER'
   | 'OTHER';
 
-export type WidgetId =
-  | 'today' | 'score' | 'tasks' | 'habits' | 'focus'
-  | 'mood' | 'wellness' | 'deadlines' | 'insight' | 'week';
 
 export interface OccupationProfile {
   type: OccupationType;
@@ -332,16 +329,27 @@ export interface LifeAnalysisDto {
     correlations: { key: string; xLabel: string; yLabel: string; r: number; n: number; strength: string; sentence: string }[];
     withheld: { key: string; xLabel: string; yLabel: string; n: number; need: number }[];
   };
-  bestTime: { hour: number | null; weekday: string | null; note: string; enoughData: boolean };
-  deltas: { key: string; label: string; current: number | null; previous: number | null; direction: string; withinNoise: boolean }[];
+  bestTime: {
+    hour: { index: number; label: string; completions: number; focusMinutes: number; days: number; perDay: number } | null;
+    weekday: { index: number; label: string; completions: number; focusMinutes: number; days: number; perDay: number } | null;
+    lowConfidence: boolean;
+    note: string;
+  };
+  deltas: DeltaDto[];
   improvements: { key: string; title: string; detail: string; suggestion: string; severity: string }[];
-  current: Record<string, number | null>;
-  previous: Record<string, number | null>;
+  strengths?: StrengthDto[];
+  consistency?: ConsistencyDto;
+  trend?: { date: string; score: number | null; hasData: boolean }[];
+  current: PeriodSummaryDto;
+  previous: PeriodSummaryDto;
 }
 
 export interface DashboardResponse {
   today: string;
   life?: LifeAnalysisDto;
+  widgets?: WidgetId[];
+  widgetLayout?: { order: WidgetId[] | null; hidden: WidgetId[]; available: WidgetId[] };
+  comparisons?: { day: ComparisonDto; week: ComparisonDto; month: ComparisonDto };
   occupation: ResolvedOccupation;
   greetingName: string;
   onboarded: boolean;
@@ -385,4 +393,79 @@ export interface FeatureBundle {
     missing: string[];
   };
   derived: Record<string, unknown>;
+}
+
+// ── Phase 3: the dashboard reads the engine, not its own maths ──────────────
+
+export type WidgetId =
+  | 'today'
+  | 'score'
+  | 'tasks'
+  | 'habits'
+  | 'focus'
+  | 'mood'
+  | 'wellness'
+  | 'deadlines'
+  | 'insight'
+  | 'week'
+  | 'trend'
+  | 'consistency'
+  | 'strengths'
+  | 'correlations'
+  | 'timeofday';
+
+export interface PeriodSummaryDto {
+  days: number;
+  daysWithData: number;
+  score: number | null;
+  tasksCompleted: number | null;
+  focusMinutes: number | null;
+  habitRate: number | null;
+  mood: number | null;
+  sleepHours: number | null;
+  screenHours: number | null;
+  stress: number | null;
+  energy: number | null;
+  sleepQuality: number | null;
+  exerciseMinutes: number | null;
+  moodDays: number;
+  habitDays: number;
+}
+
+export interface DeltaDto {
+  key: string;
+  label: string;
+  current: number | null;
+  previous: number | null;
+  change: number | null;
+  changePct: number | null;
+  direction: 'up' | 'down' | 'flat' | 'unknown';
+  higherIsBetter: boolean;
+  withinNoise: boolean;
+}
+
+export interface StrengthDto {
+  key: string;
+  title: string;
+  detail: string;
+  evidence: string;
+}
+
+export interface ConsistencyDto {
+  streak: number;
+  bestStreak: number;
+  daysWithCheckin: number;
+  days: number;
+  thin: boolean;
+  note: string;
+}
+
+export interface ComparisonDto {
+  label: string;
+  days: number;
+  available: boolean;
+  note: string;
+  current: Record<string, number | null>;
+  previous: Record<string, number | null>;
+  changes: { key: string; current: number | null; previous: number | null; change: number | null; direction: 'up' | 'down' | 'flat' | 'unknown' }[];
 }
