@@ -61,4 +61,7 @@ export const WIDGET_META: Record<WidgetId, { title: string; description: string 
   strengths: { title: 'What is working', description: 'Supported strengths, with the figures behind them' },
   correlations: { title: 'Patterns', description: 'Relationships between two domains, always with sample size' },
   timeofday: { title: 'Best time', description: 'Your strongest hours and weekdays' },
+  studywork: { title: 'Study & work', description: 'Your containers, their progress and time logged' },
+  goals: { title: 'Goals', description: 'Active goals against their targets and deadlines' },
+  overdue: { title: 'Overdue work', description: 'How old your overdue tasks are, and where they sit' },
 };

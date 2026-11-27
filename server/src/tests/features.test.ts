@@ -69,6 +69,8 @@ function emptyData(): ActivityData {
     workSessions: [],
     dailyActivities: [],
     openTasks: [],
+    projects: [],
+    goals: [],
   } as unknown as ActivityData;
 }
 

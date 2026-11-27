@@ -124,6 +124,56 @@ analyticsRouter.get(
       (w) => !layout.hidden.includes(w),
     );
 
+    // Study/work, read from the same rows the life analysis uses. The window
+    // matches the engine's (30 days ending today) so minutes agree.
+    const studyFrom = new Date(full.daily[0]?.date ? `${full.daily[0].date}T00:00:00.000Z` : `${today}T00:00:00.000Z`);
+    const studyTo = new Date(`${today}T00:00:00.000Z`);
+    studyTo.setUTCDate(studyTo.getUTCDate() + 1);
+    const from = studyFrom;
+    const to = studyTo;
+    const [projectRows, goalRows, overdueRows] = await Promise.all([
+      prisma.project.findMany({
+        where: { userId: req.user!.id, archivedAt: null },
+        select: { id: true, title: true, kind: true, status: true, deadline: true, _count: { select: { tasks: true } } },
+        orderBy: [{ status: 'asc' }, { deadline: 'asc' }],
+        take: 12,
+      }),
+      prisma.goal.findMany({
+        where: { userId: req.user!.id, status: 'ACTIVE' },
+        select: { id: true, title: true, current: true, target: true, metric: true, deadline: true },
+        orderBy: { deadline: 'asc' },
+        take: 6,
+      }),
+      prisma.task.count({
+        where: { userId: req.user!.id, status: { in: ['TODO', 'IN_PROGRESS'] }, dueDate: { lt: new Date() } },
+      }),
+    ]);
+    const projectMinutes = new Map(
+      (
+        await prisma.workSession.groupBy({
+          by: ['projectId'],
+          where: { userId: req.user!.id, status: 'COMPLETED', date: { gte: from, lt: to }, projectId: { not: null } },
+          _sum: { durationSec: true },
+        })
+      ).map((g) => [g.projectId, Math.round((g._sum.durationSec ?? 0) / 60)]),
+    );
+    const studyWork = {
+      overdueTasks: overdueRows,
+      projects: projectRows.map((p) => ({
+        id: p.id,
+        title: p.title,
+        kind: p.kind,
+        status: p.status,
+        deadline: p.deadline,
+        tasks: p._count.tasks,
+        minutes: projectMinutes.get(p.id) ?? 0,
+      })),
+      goals: goalRows,
+      minutesByProject: [...projectMinutes.entries()]
+        .map(([id, minutes]) => ({ id, title: projectRows.find((p) => p.id === id)?.title ?? 'Untitled', minutes }))
+        .sort((a, b) => b.minutes - a.minutes),
+    };
+
     // Daily / weekly / monthly comparisons, computed here so every surface
     // reads the same numbers. Each window is compared with the one before it.
     // Windows come from `lifeDays`, the same array the analysis reads, so a
@@ -138,6 +188,7 @@ analyticsRouter.get(
     const now = new Date();
     res.json({
       comparisons,
+      studyWork,
       widgets: widgetOrder,
       widgetLayout: { order: layout.order, hidden: layout.hidden, available: WIDGET_IDS },
       life: {

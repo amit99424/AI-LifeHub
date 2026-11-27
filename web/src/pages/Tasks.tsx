@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   CalendarCheck,
@@ -7,17 +8,20 @@ import {
   Clock,
   Filter,
   ListChecks,
+  ListTree,
   Pencil,
   Plus,
+  Repeat,
   Search,
   Trash2,
   X,
 } from 'lucide-react';
 import { api, qs } from '@/lib/api';
-import type { Priority, Task, TaskStatus, TasksResponse } from '@/lib/types';
+import type { Priority, RecurrenceRule, Task, TaskStatus, TasksResponse } from '@/lib/types';
 import { Badge, Button, Card, EmptyState, ErrorState, Field, Input, Modal, Select, Skeleton, Textarea, toast } from '@/components/ui';
 import { PRIORITY_STYLES, STATUS_STYLES, cn, formatDate, formatMinutes, relativeTime } from '@/lib/utils';
-import { useOccupation } from '@/lib/occupation';
+import { useOccupation, useNouns } from '@/lib/occupation';
+import { RECURRENCE_LABEL, recurrenceText, useProjects } from '@/lib/studyWork';
 
 const PRIORITIES: Priority[] = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'];
 const STATUSES: { value: TaskStatus | 'ALL' | 'OPEN'; label: string }[] = [
@@ -37,21 +41,32 @@ type FormState = {
   priority: Priority;
   status: TaskStatus;
   dueDate: string;
+  /** Phase 4: the container this belongs to, and how it repeats. */
+  projectId: string;
+  recurrence: RecurrenceRule;
+  recurrenceEvery: number;
+  recurrenceUntil: string;
 };
 
-const EMPTY: FormState = { title: '', description: '', category: '', priority: 'MEDIUM', status: 'TODO', dueDate: '' };
+const EMPTY: FormState = {
+  title: '', description: '', category: '', priority: 'MEDIUM', status: 'TODO', dueDate: '',
+  projectId: '', recurrence: 'NONE', recurrenceEvery: 1, recurrenceUntil: '',
+};
 
 /** Fallback category when the occupation is not known yet. */
 const FALLBACK_CATEGORY = 'General';
 
 export default function Tasks() {
   const qc = useQueryClient();
-  const [filters, setFilters] = useState({ status: 'OPEN' as string, priority: '', category: '', search: '', due: '', sort: 'dueDate' });
+  const [filters, setFilters] = useState({ status: 'OPEN' as string, priority: '', category: '', search: '', due: '', sort: 'dueDate', project: '' });
   const [showFilters, setShowFilters] = useState(false);
   const [modal, setModal] = useState<FormState | null>(null);
 
   const [deleting, setDeleting] = useState<Task | null>(null);
   const [quick, setQuick] = useState('');
+  const nouns = useNouns();
+  const projectsQuery = useProjects();
+  const projectList = projectsQuery.data?.projects ?? [];
 
   const query = useQuery({
     queryKey: ['tasks', filters],
@@ -63,6 +78,7 @@ export default function Tasks() {
           category: filters.category || undefined,
           search: filters.search || undefined,
           due: filters.due || undefined,
+          projectId: filters.project || undefined,
           sort: filters.sort,
           limit: 200,
         })}`,
@@ -224,6 +240,10 @@ export default function Tasks() {
       priority: t.priority,
       status: t.status,
       dueDate: t.dueDate ? new Date(t.dueDate).toISOString().slice(0, 10) : '',
+      projectId: t.projectId ?? '',
+      recurrence: t.recurrence ?? 'NONE',
+      recurrenceEvery: t.recurrenceEvery ?? 1,
+      recurrenceUntil: t.recurrenceUntil ? new Date(t.recurrenceUntil).toISOString().slice(0, 10) : '',
     });
   }
 
@@ -236,12 +256,16 @@ export default function Tasks() {
       priority: modal.priority,
       status: modal.status,
       dueDate: modal.dueDate || null,
+      projectId: modal.projectId || null,
+      recurrence: modal.recurrence,
+      recurrenceEvery: modal.recurrence === 'NONE' ? 1 : Math.max(1, modal.recurrenceEvery || 1),
+      recurrenceUntil: modal.recurrence === 'NONE' ? null : modal.recurrenceUntil || null,
     };
     if (modal.id) update.mutate({ id: modal.id, body });
     else create.mutate(body);
   }
 
-  const activeFilterCount = [filters.priority, filters.category, filters.due, filters.search].filter(Boolean).length;
+  const activeFilterCount = [filters.priority, filters.category, filters.due, filters.search, filters.project].filter(Boolean).length;
 
   return (
     <div className="space-y-4">
@@ -314,6 +338,16 @@ export default function Tasks() {
                 ))}
               </Select>
             </Field>
+            {projectList.length > 0 && (
+              <Field label={nouns.project}>
+                <Select value={filters.project} onChange={(e) => setFilters((f) => ({ ...f, project: e.target.value }))}>
+                  <option value="">Any</option>
+                  {projectList.map((p) => (
+                    <option key={p.id} value={p.id}>{p.title}</option>
+                  ))}
+                </Select>
+              </Field>
+            )}
             <Field label="Due">
               <Select value={filters.due} onChange={(e) => setFilters((f) => ({ ...f, due: e.target.value }))}>
                 <option value="">Any</option>
@@ -338,7 +372,7 @@ export default function Tasks() {
               <Input className="pl-9" placeholder="Search title or description…" value={filters.search} onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))} />
             </div>
             {activeFilterCount > 0 && (
-              <Button variant="ghost" size="sm" onClick={() => setFilters((f) => ({ status: f.status, sort: f.sort, priority: '', category: '', search: '', due: '' }))} icon={<X className="h-3.5 w-3.5" />}>
+              <Button variant="ghost" size="sm" onClick={() => setFilters((f) => ({ status: f.status, sort: f.sort, priority: '', category: '', search: '', due: '', project: '' }))} icon={<X className="h-3.5 w-3.5" />}>
                 Clear
               </Button>
             )}
@@ -439,7 +473,45 @@ export default function Tasks() {
                   <option value="ARCHIVED">Archived</option>
                 </Select>
               </Field>
+              {projectList.length > 0 && (
+                <Field label={nouns.project}>
+                  <Select value={modal.projectId} onChange={(e) => setModal({ ...modal, projectId: e.target.value })}>
+                    <option value="">None</option>
+                    {projectList.map((p) => (
+                      <option key={p.id} value={p.id}>{p.code ? `${p.code} · ${p.title}` : p.title}</option>
+                    ))}
+                  </Select>
+                </Field>
+              )}
+              <Field label="Repeats">
+                <Select value={modal.recurrence} onChange={(e) => setModal({ ...modal, recurrence: e.target.value as RecurrenceRule })}>
+                  {(Object.keys(RECURRENCE_LABEL) as RecurrenceRule[]).map((r) => (
+                    <option key={r} value={r}>{RECURRENCE_LABEL[r]}</option>
+                  ))}
+                </Select>
+              </Field>
+              {modal.recurrence !== 'NONE' && modal.recurrence !== 'WEEKDAYS' && (
+                <Field label="Repeat every">
+                  <Input
+                    type="number"
+                    min={1}
+                    max={52}
+                    value={modal.recurrenceEvery}
+                    onChange={(e) => setModal({ ...modal, recurrenceEvery: Number(e.target.value) })}
+                  />
+                </Field>
+              )}
+              {modal.recurrence !== 'NONE' && (
+                <Field label="Repeat until (optional)">
+                  <Input type="date" value={modal.recurrenceUntil} onChange={(e) => setModal({ ...modal, recurrenceUntil: e.target.value })} />
+                </Field>
+              )}
             </div>
+            {modal.recurrence !== 'NONE' && (
+              <p className="text-[11px] text-ink-500">
+                Completing this one creates the next {recurrenceText(modal.recurrence, modal.recurrenceEvery).toLowerCase()} — dated from this task's own due date, not from the day you tick it.
+              </p>
+            )}
           </div>
         )}
       </Modal>
@@ -545,6 +617,21 @@ function Group({
                 {t.dueDate && (
                   <span className={cn('inline-flex items-center gap-1', t.overdue && 'font-semibold text-rose-500')}>
                     <Clock className="h-3 w-3" /> due {formatDate(new Date(t.dueDate))}
+                  </span>
+                )}
+                {t.project && (
+                  <Link to={`/projects/${t.project.id}`} className="inline-flex items-center gap-1 rounded bg-ink-100 px-1.5 py-0.5 font-semibold text-ink-600 hover:underline dark:bg-ink-800 dark:text-ink-300">
+                    {t.project.code ? `${t.project.code} · ` : ''}{t.project.title}
+                  </Link>
+                )}
+                {t.recurrence && t.recurrence !== 'NONE' && (
+                  <span className="inline-flex items-center gap-1 text-brand-600 dark:text-brand-400">
+                    <Repeat className="h-3 w-3" /> {recurrenceText(t.recurrence, t.recurrenceEvery ?? 1).toLowerCase()}
+                  </span>
+                )}
+                {(t._count?.subtasks ?? 0) > 0 && (
+                  <span className="inline-flex items-center gap-1">
+                    <ListTree className="h-3 w-3" /> {t._count?.subtasks} subtask{(t._count?.subtasks ?? 0) === 1 ? '' : 's'}
                   </span>
                 )}
                 {t.completedAt && <span className="text-emerald-600 dark:text-emerald-400">done {relativeTime(t.completedAt)}</span>}

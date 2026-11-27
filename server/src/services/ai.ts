@@ -145,6 +145,18 @@ const INSIGHT_SPECS: Record<
     focus:
       'Summarise themes, sentiment mix and recurring productivity topics from the journal data. Quote at most one short phrase. Suggest what to notice or write about next.',
   },
+  FOCUS: {
+    label: 'Study and work progress',
+    needs: (f) => f.studyWork.byProject.length > 0 || f.studyWork.openByProject.length > 0 || f.tasks.overdueOpen >= 2,
+    focus:
+      'Use studyWork.byProject (minutes logged per container), studyWork.openByProject (open and overdue counts per container), studyWork.progress (tasksDone of tasksTotal per open container, with progressPct null when the container has no tasks) and studyWork.unfiledMinutes. Name the containers exactly as they appear — never invent a subject or project. Identify unfinished work, which container has the most late tasks, and where time is going versus what is still open. Quote progress as "done of total tasks"; a null progressPct means there is nothing to measure, not zero. If unfiledMinutes is large, say that time logged without a container cannot be attributed. Suggest at most three priorities for the next day that fit the open work; do not estimate hours that are not in the data.',
+  },
+  GOALS: {
+    label: 'Goals and milestones',
+    needs: (f) => f.goals.active > 0,
+    focus:
+      'Use goals.active, goals.withTarget and goals.behind. Only goals that appear in goals.behind have a recorded number under half its target with a deadline; a goal with no target has no percentage and must not be described as behind. Say what is actually recorded and, if a goal is behind, name one concrete next step from its own metric.',
+  },
   ROUTINE: {
     label: 'Routine signals',
     needs: (f) => f.routine.daysRecorded >= 3,
@@ -292,7 +304,10 @@ export function insightDto(i: {
 
 /** Generates the dashboard set: weekly summary + the most relevant signals. */
 export async function generateInsightSet(userId: string, tz: string, opts: { force?: boolean; types?: (keyof typeof INSIGHT_SPECS | 'WEEKLY_SUMMARY')[] } = {}) {
-  const types = opts.types ?? ['WEEKLY_SUMMARY', 'PRODUCTIVITY', 'HABIT', 'OVERLOAD', 'MOOD'];
+  // FOCUS and GOALS are included by default so a person who uses projects gets
+  // the study/work reading without asking for it. Both are gated by their own
+  // `needs`, so an account with no projects simply reports why it was skipped.
+  const types = opts.types ?? ['WEEKLY_SUMMARY', 'PRODUCTIVITY', 'FOCUS', 'OVERLOAD', 'HABIT', 'MOOD'];
   const out: { type: string; insight?: GeneratedInsight; skipped?: string; error?: string }[] = [];
   for (const t of types) {
     try {

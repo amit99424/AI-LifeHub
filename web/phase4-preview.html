@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AI-LifeHub · Phase 4 preview</title>
+<style>
+  :root{
+    --bg:#070A18; --surface:#12182C; --surface2:#171F38; --border:#232C4A;
+    --ink:#E8ECFA; --ink2:#98A3C7; --ink3:#6C779B;
+    --brand:#a855f7; --blue:#6366F1; --sky:#38BDF8;
+    --ok:#34D399; --warn:#FBBF24; --bad:#FB7185;
+    --grad:linear-gradient(135deg,#A855F7 0%,#6366F1 55%,#38BDF8 100%);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+  a{color:inherit;text-decoration:none}
+  .wrap{max-width:1180px;margin:0 auto;padding:24px 20px 64px}
+
+  /* shell */
+  header{display:flex;align-items:center;gap:14px;padding:14px 0 22px;flex-wrap:wrap}
+  .mark{width:34px;height:34px;flex:0 0 34px}
+  .brand{font-weight:800;font-size:17px;letter-spacing:-.02em}
+  .brand span{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .chip{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3);border:1px solid var(--border);border-radius:999px;padding:4px 10px}
+  .spacer{flex:1}
+
+  .tabs{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin-bottom:20px;scrollbar-width:none}
+  .tabs::-webkit-scrollbar{display:none}
+  .tab{white-space:nowrap;border:1px solid var(--border);background:var(--surface);color:var(--ink2);border-radius:10px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer}
+  .tab[aria-selected="true"]{background:var(--surface2);color:var(--ink);border-color:#3a2a63;box-shadow:inset 0 0 0 1px rgba(168,85,247,.28)}
+  .panel{display:none}
+  .panel.on{display:block}
+
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px}
+  .card h3{margin:0;font-size:13px;font-weight:700;letter-spacing:.01em}
+  .card .sub{color:var(--ink3);font-size:11px;margin-top:2px}
+  .head{display:flex;align-items:flex-start;gap:8px;margin-bottom:12px}
+  .head .spacer{flex:1}
+  .grid{display:grid;gap:12px}
+  .g2{grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}
+  .g3{grid-template-columns:repeat(auto-fit,minmax(210px,1fr))}
+  .g4{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+
+  .btn{border:1px solid var(--border);background:var(--surface2);color:var(--ink);border-radius:10px;padding:7px 12px;font-size:12px;font-weight:600;cursor:pointer}
+  .btn.primary{background:var(--grad);border:0;color:#0B0F1F;font-weight:800}
+  .btn.ghost{background:transparent}
+  .btn:disabled{opacity:.4;cursor:not-allowed}
+
+  .pill{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:3px 9px;font-size:10px;font-weight:700;letter-spacing:.03em}
+  .p-plan{background:rgba(108,119,155,.16);color:#A9B4D6}
+  .p-active{background:rgba(99,102,241,.18);color:#A5B4FC}
+  .p-hold{background:rgba(251,191,36,.15);color:#FCD34D}
+  .p-done{background:rgba(52,211,153,.15);color:#6EE7B7}
+  .p-study{background:rgba(56,189,248,.15);color:#7DD3FC}
+  .p-client{background:rgba(168,85,247,.16);color:#D8B4FE}
+  .p-soft{background:rgba(108,119,155,.14);color:var(--ink2)}
+
+  .kpi{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:13px}
+  .kpi .lab{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--ink3)}
+  .kpi .val{font-size:23px;font-weight:800;letter-spacing:-.02em;margin-top:3px;font-variant-numeric:tabular-nums}
+  .kpi .val small{font-size:11px;font-weight:600;color:var(--ink3);margin-left:3px}
+  .kpi .note{font-size:10px;color:var(--ink3);margin-top:2px}
+  .up{color:var(--ok);font-size:10px;font-weight:700}
+  .down{color:var(--bad);font-size:10px;font-weight:700}
+  .flat{color:var(--ink3);font-size:10px;font-weight:700}
+
+  .bar{height:6px;border-radius:99px;background:#1D2542;overflow:hidden}
+  .bar > i{display:block;height:100%;border-radius:99px;background:var(--grad)}
+
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink3);font-weight:700;padding:0 8px 8px}
+  td{padding:9px 8px;border-top:1px solid var(--border)}
+  tr:hover td{background:rgba(255,255,255,.015)}
+  .num{font-variant-numeric:tabular-nums}
+
+  .empty{display:flex;gap:10px;align-items:flex-start;border:1px dashed #2B3559;border-radius:12px;padding:12px;background:rgba(255,255,255,.012)}
+  .empty b{display:block;font-size:12px;margin-bottom:2px}
+  .empty p{margin:0;font-size:11.5px;color:var(--ink2)}
+
+  .sub-task{display:flex;align-items:center;gap:8px;padding:6px 0;font-size:12.5px;border-top:1px solid rgba(35,44,74,.6)}
+  .box{width:16px;height:16px;border-radius:5px;border:1.5px solid #3A466E;flex:0 0 16px;display:grid;place-items:center;font-size:10px}
+  .box.on{background:var(--ok);border-color:var(--ok);color:#06251A}
+  .muted{color:var(--ink3)}
+  .strike{text-decoration:line-through;color:var(--ink3)}
+
+  .ring{--p:0;width:64px;height:64px;border-radius:50%;flex:0 0 64px;display:grid;place-items:center;
+    background:conic-gradient(var(--brand) calc(var(--p)*1%), #1D2542 0);position:relative}
+  .ring::after{content:"";position:absolute;inset:6px;border-radius:50%;background:var(--surface)}
+  .ring b{position:relative;z-index:1;font-size:13px;font-variant-numeric:tabular-nums}
+
+  .heat{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin-top:10px}
+  .heat i{aspect-ratio:1;border-radius:3px;background:#1A2240}
+  .heat i.l1{background:rgba(168,85,247,.22)}.heat i.l2{background:rgba(168,85,247,.45)}
+  .heat i.l3{background:rgba(168,85,247,.7)}.heat i.l4{background:#a855f7}
+
+  .timeline{display:flex;flex-direction:column;gap:0}
+  .tl{display:grid;grid-template-columns:16px 1fr;gap:10px;position:relative;padding-bottom:14px}
+  .tl:not(:last-child)::before{content:"";position:absolute;left:7px;top:16px;bottom:0;width:1.5px;background:var(--border)}
+  .dot{width:16px;height:16px;border-radius:50%;border:2px solid var(--border);background:var(--surface);display:grid;place-items:center;font-size:8px;z-index:1}
+  .dot.done{background:var(--ok);border-color:var(--ok);color:#06251A}
+  .dot.now{border-color:var(--brand);box-shadow:0 0 0 4px rgba(168,85,247,.15)}
+  .tl b{font-size:12.5px;display:block}
+  .tl span{font-size:11px;color:var(--ink3)}
+
+  .timer{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+  .clock{font-size:40px;font-weight:800;letter-spacing:-.03em;font-variant-numeric:tabular-nums;
+    background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .seg{display:flex;gap:0;border:1px solid var(--border);border-radius:10px;overflow:hidden}
+  .seg button{background:transparent;border:0;color:var(--ink2);padding:7px 12px;font-size:12px;font-weight:600;cursor:pointer}
+  .seg button[aria-pressed="true"]{background:var(--surface2);color:var(--ink)}
+
+  .evi{font-size:10.5px;color:var(--ink3);border-top:1px solid var(--border);margin-top:8px;padding-top:6px}
+  .warnbox{border:1px solid rgba(251,191,36,.3);background:rgba(251,191,36,.07);border-radius:12px;padding:10px 12px;font-size:11.5px;color:#FCD34D}
+  footer{margin-top:28px;color:var(--ink3);font-size:11px;border-top:1px solid var(--border);padding-top:14px}
+  @media (max-width:560px){ .clock{font-size:32px} .wrap{padding:16px 14px 48px} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
+      <defs>
+        <linearGradient id="g1" x1="0" y1="0" x2="32" y2="32">
+          <stop offset="0" stop-color="#A855F7"/><stop offset=".55" stop-color="#6366F1"/><stop offset="1" stop-color="#38BDF8"/>
+        </linearGradient>
+      </defs>
+      <path d="M16 4 L26 27 H21.4 L16 13.4 L10.6 27 H6 Z" fill="url(#g1)"/>
+      <path d="M4 20 C10 26 22 26 28 18" fill="none" stroke="url(#g1)" stroke-width="2.4" stroke-linecap="round" opacity=".85"/>
+      <path d="M16 1.6 L17.5 4.9 L20.8 6.4 L17.5 7.9 L16 11.2 L14.5 7.9 L11.2 6.4 L14.5 4.9 Z" fill="#38BDF8"/>
+    </svg>
+    <div class="brand">AI-Life<span>Hub</span></div>
+    <span class="chip">Phase 4 · Study &amp; Work</span>
+    <div class="spacer"></div>
+    <span class="chip">Student · Subjects</span>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab" role="tab" aria-selected="true" data-p="projects">Subjects &amp; projects</button>
+    <button class="tab" role="tab" aria-selected="false" data-p="tasks">Tasks &amp; subtasks</button>
+    <button class="tab" role="tab" aria-selected="false" data-p="session">Focus timer</button>
+    <button class="tab" role="tab" aria-selected="false" data-p="goals">Goals &amp; milestones</button>
+    <button class="tab" role="tab" aria-selected="false" data-p="analytics">Study analytics</button>
+    <button class="tab" role="tab" aria-selected="false" data-p="empty">New account</button>
+  </nav>
+
+  <!-- ─────────── PROJECTS ─────────── -->
+  <section class="panel on" id="projects">
+    <div class="grid g4" style="margin-bottom:12px">
+      <div class="kpi"><div class="lab">Subjects</div><div class="val">4<small>active</small></div><div class="note">1 planning · 1 done</div></div>
+      <div class="kpi"><div class="lab">Study time</div><div class="val">9h 40m<small>this week</small></div><div class="note"><span class="up">▲ 12%</span> vs last week</div></div>
+      <div class="kpi"><div class="lab">Tasks done</div><div class="val">31<small>/ 44</small></div><div class="note">70% of open work cleared</div></div>
+      <div class="kpi"><div class="lab">Overdue</div><div class="val">5<small>tasks</small></div><div class="note">oldest 6 days</div></div>
+    </div>
+
+    <div class="card">
+      <div class="head">
+        <div><h3>Subjects</h3><div class="sub">Progress is counted from each subject's own tasks — never typed in</div></div>
+        <div class="spacer"></div>
+        <button class="btn primary">+ New subject</button>
+      </div>
+      <table>
+        <thead><tr><th>Subject</th><th>Code</th><th>Status</th><th>Deadline</th><th style="width:170px">Progress</th><th class="num">Study</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><b>Data Structures</b><div class="muted" style="font-size:11px">Assignments, lab work and exam prep</div></td>
+            <td class="muted">CS201</td><td><span class="pill p-active">Active</span></td>
+            <td class="muted">28 Mar</td>
+            <td><div class="bar"><i style="width:64%"></i></div><div class="muted" style="font-size:10.5px;margin-top:3px">14 of 22 tasks</div></td>
+            <td class="num">4h 05m</td>
+          </tr>
+          <tr>
+            <td><b>Linear Algebra</b><div class="muted" style="font-size:11px">Problem sets and revision</div></td>
+            <td class="muted">MA104</td><td><span class="pill p-active">Active</span></td>
+            <td class="muted">02 Apr</td>
+            <td><div class="bar"><i style="width:38%"></i></div><div class="muted" style="font-size:10.5px;margin-top:3px">5 of 13 tasks</div></td>
+            <td class="num">2h 20m</td>
+          </tr>
+          <tr>
+            <td><b>Operating Systems</b><div class="muted" style="font-size:11px">Reading and lab reports</div></td>
+            <td class="muted">CS210</td><td><span class="pill p-hold">On hold</span></td>
+            <td class="muted">—</td>
+            <td><div class="bar"><i style="width:22%"></i></div><div class="muted" style="font-size:10.5px;margin-top:3px">2 of 9 tasks</div></td>
+            <td class="num">1h 15m</td>
+          </tr>
+          <tr>
+            <td><b>Technical Writing</b><div class="muted" style="font-size:11px">Elective</div></td>
+            <td class="muted">EN110</td><td><span class="pill p-plan">Planning</span></td>
+            <td class="muted">11 Apr</td>
+            <td><div class="muted" style="font-size:10.5px">No tasks yet — no progress to report</div></td>
+            <td class="num">—</td>
+          </tr>
+          <tr>
+            <td><b>Physics Lab</b><div class="muted" style="font-size:11px">Archived</div></td>
+            <td class="muted">PH101</td><td><span class="pill p-done">Completed</span></td>
+            <td class="muted">—</td>
+            <td><div class="bar"><i style="width:100%"></i></div><div class="muted" style="font-size:10.5px;margin-top:3px">8 of 8 tasks</div></td>
+            <td class="num">2h 00m</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="evi">A subject with no tasks shows no percentage, because "0% of nothing" is not a measurement.</div>
+    </div>
+
+    <div class="grid g2" style="margin-top:12px">
+      <div class="card">
+        <div class="head"><div><h3>Terminology follows your occupation</h3><div class="sub">One table, eight vocabularies</div></div></div>
+        <table>
+          <thead><tr><th>Occupation</th><th>Container</th><th>Default kind</th></tr></thead>
+          <tbody>
+            <tr><td>Student</td><td><span class="pill p-study">Subject</span></td><td class="muted">Study</td></tr>
+            <tr><td>Working professional</td><td><span class="pill p-active">Project</span></td><td class="muted">Work</td></tr>
+            <tr><td>Freelancer</td><td><span class="pill p-client">Client project</span></td><td class="muted">Client</td></tr>
+            <tr><td>Business owner</td><td><span class="pill p-hold">Initiative</span></td><td class="muted">Business</td></tr>
+            <tr><td>Job seeker</td><td><span class="pill p-soft">Application</span></td><td class="muted">Job search</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="card">
+        <div class="head"><div><h3>Time per subject</h3><div class="sub">Last 14 days · logged sessions only</div></div></div>
+        <div class="heat">
+          <i class="l2"></i><i></i><i class="l3"></i><i class="l1"></i><i></i><i class="l4"></i><i class="l3"></i><i class="l2"></i><i class="l1"></i><i class="l3"></i><i></i><i class="l4"></i><i class="l2"></i><i class="l3"></i>
+        </div>
+        <div style="margin-top:14px">
+          <div style="display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:4px"><span>Data Structures</span><span class="num muted">4h 05m</span></div>
+          <div class="bar"><i style="width:100%"></i></div>
+          <div style="display:flex;justify-content:space-between;font-size:11.5px;margin:10px 0 4px"><span>Linear Algebra</span><span class="num muted">2h 20m</span></div>
+          <div class="bar"><i style="width:57%"></i></div>
+          <div style="display:flex;justify-content:space-between;font-size:11.5px;margin:10px 0 4px"><span>Operating Systems</span><span class="num muted">1h 15m</span></div>
+          <div class="bar"><i style="width:31%"></i></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────── TASKS ─────────── -->
+  <section class="panel" id="tasks">
+    <div class="grid g2">
+      <div class="card">
+        <div class="head"><div><h3>Today</h3><div class="sub">Project-linked · subtasks nested one level</div></div><div class="spacer"></div><span class="pill p-soft">3 of 6 done</span></div>
+
+        <div style="padding:4px 0 10px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span class="box on">✓</span><b class="strike">Problem set 4</b>
+            <span class="pill p-study">Data Structures</span>
+            <div class="spacer" style="flex:1"></div><span class="muted num" style="font-size:11px">2 subtasks</span>
+          </div>
+        </div>
+
+        <div style="padding:4px 0 10px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span class="box"></span><b>Finish lab report</b>
+            <span class="pill p-study">Operating Systems</span>
+            <div class="spacer" style="flex:1"></div><span class="pill p-hold">Due today</span>
+          </div>
+          <div style="padding-left:26px">
+            <div class="sub-task"><span class="box on">✓</span><span class="strike">Collect measurements</span></div>
+            <div class="sub-task"><span class="box"></span><span>Write the discussion</span></div>
+            <div class="sub-task"><span class="box"></span><span>Format references</span></div>
+          </div>
+        </div>
+
+        <div style="padding:4px 0 10px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span class="box"></span><b>Revise eigenvalues</b>
+            <span class="pill p-study">Linear Algebra</span>
+            <div class="spacer" style="flex:1"></div><span class="pill p-soft">Every weekday</span>
+          </div>
+          <div style="padding-left:26px"><div class="sub-task muted" style="border:0">Next instance opens when this one is ticked — no scheduler needed.</div></div>
+        </div>
+
+        <div style="padding:4px 0 4px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span class="box"></span><b>Read chapter 7</b>
+            <span class="pill p-study">Data Structures</span>
+            <div class="spacer" style="flex:1"></div><span class="down">6 days late</span>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="card">
+          <div class="head"><div><h3>Overdue analytics</h3><div class="sub">Counted from due dates, nothing estimated</div></div></div>
+          <div class="grid g3">
+            <div class="kpi"><div class="lab">Overdue</div><div class="val">5</div><div class="note">oldest 6 days</div></div>
+            <div class="kpi"><div class="lab">Over a week</div><div class="val">1</div><div class="note">worth rescheduling</div></div>
+            <div class="kpi"><div class="lab">No project</div><div class="val">1</div><div class="note">unfiled work</div></div>
+          </div>
+          <div style="margin-top:12px">
+            <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--ink3);margin-bottom:4px"><span>1 day</span><span>2–3</span><span>4–7</span><span>&gt; week</span></div>
+            <div style="display:flex;gap:4px;align-items:flex-end;height:54px">
+              <div style="flex:1;background:var(--grad);border-radius:4px;height:100%" title="2"></div>
+              <div style="flex:1;background:var(--grad);border-radius:4px;height:60%;opacity:.85" title="2"></div>
+              <div style="flex:1;background:var(--grad);border-radius:4px;height:0;min-height:3px;opacity:.5" title="0"></div>
+              <div style="flex:1;background:var(--grad);border-radius:4px;height:30%;opacity:.7" title="1"></div>
+            </div>
+          </div>
+        </div>
+        <div class="card" style="margin-top:12px">
+          <div class="head"><div><h3>By subject</h3><div class="sub">Where late work is accumulating</div></div></div>
+          <table>
+            <tbody>
+              <tr><td>Operating Systems</td><td class="num" style="text-align:right">3</td></tr>
+              <tr><td>Linear Algebra</td><td class="num" style="text-align:right">1</td></tr>
+              <tr><td class="muted">No subject</td><td class="num" style="text-align:right">1</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────── SESSION ─────────── -->
+  <section class="panel" id="session">
+    <div class="grid g2">
+      <div class="card">
+        <div class="head"><div><h3>Focus session</h3><div class="sub">Linked to Data Structures · Pomodoro 25 / 5</div></div><div class="spacer"></div><span class="pill p-active">Running</span></div>
+        <div class="timer">
+          <div class="clock">18:42</div>
+          <div>
+            <div class="seg" style="margin-bottom:8px">
+              <button aria-pressed="true">25 / 5</button><button aria-pressed="false">50 / 10</button><button aria-pressed="false">Open</button>
+            </div>
+            <div style="display:flex;gap:8px"><button class="btn primary">Pause</button><button class="btn">Stop &amp; save</button></div>
+          </div>
+        </div>
+        <div style="margin-top:16px">
+          <div style="font-size:11px;color:var(--ink3);margin-bottom:6px">This session</div>
+          <div class="grid g3">
+            <div class="kpi"><div class="lab">Focused</div><div class="val">18<small>min</small></div></div>
+            <div class="kpi"><div class="lab">Breaks</div><div class="val">1<small>· 4m 10s</small></div></div>
+            <div class="kpi"><div class="lab">Pomodoros</div><div class="val">1<small>done</small></div></div>
+          </div>
+        </div>
+        <div class="warnbox" style="margin-top:14px">One session at a time. Starting a second is refused with “You already have a session in progress” — that is the duplicate guard, not an error.</div>
+      </div>
+
+      <div class="card">
+        <div class="head"><div><h3>Session history</h3><div class="sub">Breaks are rows, so break length is readable</div></div></div>
+        <table>
+          <thead><tr><th>When</th><th>Subject</th><th class="num">Focused</th><th class="num">Breaks</th><th class="num">Focus</th></tr></thead>
+          <tbody>
+            <tr><td class="muted">Today 09:12</td><td>Data Structures</td><td class="num">1h 20m</td><td class="num">12m</td><td class="num">4/5</td></tr>
+            <tr><td class="muted">Today 08:05</td><td>Linear Algebra</td><td class="num">45m</td><td class="num">5m</td><td class="num">3/5</td></tr>
+            <tr><td class="muted">Yesterday 19:30</td><td>Operating Systems</td><td class="num">55m</td><td class="num">10m</td><td class="num">—</td></tr>
+            <tr><td class="muted">Yesterday 16:00</td><td>Data Structures</td><td class="num">1h 35m</td><td class="num">15m</td><td class="num">5/5</td></tr>
+            <tr><td class="muted">26 Mar 20:10</td><td class="muted">No subject</td><td class="num">30m</td><td class="num">0m</td><td class="num">2/5</td></tr>
+          </tbody>
+        </table>
+        <div class="evi">A session with no subject is kept, not hidden — it still counts toward the day.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────── GOALS ─────────── -->
+  <section class="panel" id="goals">
+    <div class="grid g2">
+      <div class="card">
+        <div class="head"><div><h3>Finish the syllabus</h3><div class="sub">Linked to Data Structures · measures chapters</div></div><div class="spacer"></div><span class="pill p-active">Active</span></div>
+        <div style="display:flex;align-items:center;gap:16px">
+          <div class="ring" style="--p:62"><b>62%</b></div>
+          <div style="flex:1">
+            <div style="font-size:12.5px">8 of 13 chapters</div>
+            <div class="bar" style="margin-top:6px"><i style="width:62%"></i></div>
+            <div class="muted" style="font-size:11px;margin-top:5px">Deadline 28 Mar · 9 days left</div>
+          </div>
+        </div>
+        <div style="margin-top:16px">
+          <div style="font-size:11px;color:var(--ink3);margin-bottom:8px">Milestones</div>
+          <div class="timeline">
+            <div class="tl"><span class="dot done">✓</span><div><b>Chapters 1–4</b><span>Completed 12 Mar</span></div></div>
+            <div class="tl"><span class="dot done">✓</span><div><b>Chapters 5–8</b><span>Completed 24 Mar</span></div></div>
+            <div class="tl"><span class="dot now"></span><div><b>Chapters 9–11</b><span>Due 30 Mar · in progress</span></div></div>
+            <div class="tl"><span class="dot"></span><div><b>Chapters 12–13</b><span>Due 05 Apr</span></div></div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="card">
+          <div class="head"><div><h3>Goal with no target</h3><div class="sub">Honest about what it cannot measure</div></div></div>
+          <div style="display:flex;align-items:center;gap:16px">
+            <div class="ring" style="--p:0;background:#1D2542"><b class="muted">—</b></div>
+            <div style="flex:1">
+              <b style="font-size:13px">Get comfortable with proofs</b>
+              <div class="muted" style="font-size:11.5px;margin-top:3px">2 of 2 milestones done · no target set</div>
+              <div class="muted" style="font-size:11px;margin-top:5px">Without a target there is no percentage. The milestones are the progress.</div>
+            </div>
+          </div>
+        </div>
+        <div class="card" style="margin-top:12px">
+          <div class="head"><div><h3>This week, from the engine</h3><div class="sub">Each line cites the figures behind it</div></div></div>
+          <div style="font-size:12.5px;line-height:1.65">
+            <div style="padding:8px 0;border-bottom:1px solid var(--border)"><b>Strengths</b><div class="muted">Study time is up 12% on last week (9h 40m vs 8h 38m), and you finished 71% of planned tasks.</div><div class="evi">7 recorded days both weeks</div></div>
+            <div style="padding:8px 0;border-bottom:1px solid var(--border)"><b>Watch</b><div class="muted">5 tasks are overdue, 1 by more than a week.</div><div class="evi">counted from due dates</div></div>
+            <div style="padding:8px 0"><b>Not enough data</b><div class="muted">Sleep against focus needs 14 days recorded together — you have 9.</div><div class="evi">withheld, not guessed</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────── ANALYTICS ─────────── -->
+  <section class="panel" id="analytics">
+    <div class="grid g4" style="margin-bottom:12px">
+      <div class="kpi"><div class="lab">Study this week</div><div class="val">9h 40m</div><div class="note"><span class="up">▲ 12%</span> vs last week</div></div>
+      <div class="kpi"><div class="lab">Best hour</div><div class="val">09:00</div><div class="note">18 days behind it</div></div>
+      <div class="kpi"><div class="lab">Best weekday</div><div class="val">Tuesday</div><div class="note">2h 05m per active day</div></div>
+      <div class="kpi"><div class="lab">Consistency</div><div class="val">6<small>days</small></div><div class="note">best run 11 days</div></div>
+    </div>
+
+    <div class="grid g2">
+      <div class="card">
+        <div class="head"><div><h3>Study time per subject</h3><div class="sub">Last 30 days · linked sessions only</div></div></div>
+        <div style="display:flex;gap:3px;align-items:flex-end;height:120px;padding-top:6px">
+          <div style="flex:1;background:var(--grad);border-radius:4px 4px 0 0;height:88%"></div>
+          <div style="flex:1;background:var(--grad);border-radius:4px 4px 0 0;height:62%;opacity:.9"></div>
+          <div style="flex:1;background:var(--grad);border-radius:4px 4px 0 0;height:74%;opacity:.85"></div>
+          <div style="flex:1;background:var(--grad);border-radius:4px 4px 0 0;height:41%;opacity:.8"></div>
+          <div style="flex:1;background:var(--grad);border-radius:4px 4px 0 0;height:100%"></div>
+          <div style="flex:1;background:var(--grad);border-radius:4px 4px 0 0;height:35%;opacity:.75"></div>
+          <div style="flex:1;background:var(--grad);border-radius:4px 4px 0 0;height:12%;opacity:.5"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--ink3);margin-top:6px"><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span></div>
+      </div>
+      <div class="card">
+        <div class="head"><div><h3>What the engine will and will not say</h3><div class="sub">Same rules as the AI assistant</div></div></div>
+        <table>
+          <tbody>
+            <tr><td>Study vs daily score</td><td style="text-align:right"><span class="pill p-soft">withheld</span></td></tr>
+            <tr><td class="muted" style="font-size:11px">Both columns carry the same values — correlating them would restate one.</td><td></td></tr>
+            <tr><td>Sleep vs focus</td><td style="text-align:right"><span class="pill p-active">r 0.41 · n 21</span></td></tr>
+            <tr><td class="muted" style="font-size:11px">Moderate, 21 paired days — above the 14-day threshold.</td><td></td></tr>
+            <tr><td>Stress vs focus</td><td style="text-align:right"><span class="pill p-soft">9 of 14 days</span></td></tr>
+            <tr><td class="muted" style="font-size:11px">Too few paired days; listed with its count instead of drawn.</td><td></td></tr>
+          </tbody>
+        </table>
+        <div class="evi">A relationship is never called a cause.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────── EMPTY ─────────── -->
+  <section class="panel" id="empty">
+    <div class="grid g2">
+      <div class="card">
+        <div class="head"><div><h3>A brand-new account</h3><div class="sub">Nothing logged — so nothing is claimed</div></div></div>
+        <div class="empty" style="margin-bottom:10px">
+          <div style="font-size:16px">📚</div>
+          <div><b>No subjects yet</b><p>Create a subject and every task, session and deadline you add will file itself under it.</p></div>
+        </div>
+        <div class="empty" style="margin-bottom:10px">
+          <div style="font-size:16px">⏱</div>
+          <div><b>No study time recorded</b><p>Start a focus session — it saves when you stop, and break time is tracked separately.</p></div>
+        </div>
+        <div class="empty">
+          <div style="font-size:16px">✨</div>
+          <div><b>Not enough data for insights</b><p>0 days recorded. A correlation needs 14 paired days; a comparison needs recorded days on both sides. Until then the engine says so instead of guessing.</p></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="head"><div><h3>Dashboard, new account</h3><div class="sub">Empty states are part of the design</div></div></div>
+        <div class="grid g3">
+          <div class="kpi"><div class="lab">Study today</div><div class="val muted">—</div><div class="note">nothing logged</div></div>
+          <div class="kpi"><div class="lab">Tasks done</div><div class="val">0<small>/ 0</small></div><div class="note">no tasks yet</div></div>
+          <div class="kpi"><div class="lab">Overdue</div><div class="val muted">—</div><div class="note">nothing scheduled</div></div>
+        </div>
+        <div style="margin-top:14px" class="empty">
+          <div style="font-size:16px">📈</div>
+          <div><b>No trend yet</b><p>A line through fewer than three recorded days would be a drawing, not a trend.</p></div>
+        </div>
+        <div class="evi">Widgets shown: 15 · order from your occupation, editable and saved server-side.</div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    Phase 4 · Study &amp; Work Management — static preview of the screens, built from the same rules the server enforces. Numbers here are illustrative; the app shows only what you have recorded.
+  </footer>
+</div>
+
+<script>
+  const tabs = [...document.querySelectorAll('.tab')];
+  const panels = [...document.querySelectorAll('.panel')];
+  tabs.forEach((t) => t.addEventListener('click', () => {
+    tabs.forEach((x) => x.setAttribute('aria-selected', String(x === t)));
+    panels.forEach((p) => p.classList.toggle('on', p.id === t.dataset.p));
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }));
+</script>
+</body>
+</html>

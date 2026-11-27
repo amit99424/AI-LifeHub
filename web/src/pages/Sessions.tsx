@@ -4,6 +4,7 @@ import { BarChart, Bar, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import { CircleDot, Clock, Pause, Play, Plus, Square, Timer, Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useNouns } from '@/lib/occupation';
+import { useProjects } from '@/lib/studyWork';
 import type { SessionCategory, SessionsResponse } from '@/lib/types';
 import { Badge, Button, Card, CardHeader, EmptyState, ErrorState, Field, Input, Modal, Select, Skeleton, toast } from '@/components/ui';
 import { CATEGORY_META, cn, formatClock, formatDate, formatMinutes, relativeTime } from '@/lib/utils';
@@ -13,11 +14,13 @@ const CATEGORIES = Object.keys(CATEGORY_META) as SessionCategory[];
 export default function Sessions() {
   const qc = useQueryClient();
   const [tick, setTick] = useState(0);
-  const [manual, setManual] = useState<{ category: SessionCategory; minutes: number; label: string; date: string } | null>(null);
+  const [manual, setManual] = useState<{ category: SessionCategory; minutes: number; label: string; date: string; projectId: string } | null>(null);
   const [stopModal, setStopModal] = useState(false);
   const [focusScore, setFocusScore] = useState<number | null>(null);
   const [starting, setStarting] = useState(false);
-  const [startForm, setStartForm] = useState<{ category: SessionCategory; label: string }>({ category: 'STUDYING', label: '' });
+  const [startForm, setStartForm] = useState<{ category: SessionCategory; label: string; projectId: string }>({ category: 'STUDYING', label: '', projectId: '' });
+  const projects = useProjects();
+  const projectList = projects.data?.projects ?? [];
 
   const nouns = useNouns();
   const query = useQuery({ queryKey: ['sessions'], queryFn: () => api.get<SessionsResponse>('/api/sessions?days=30') });
@@ -35,7 +38,7 @@ export default function Sessions() {
   };
 
   const start = useMutation({
-    mutationFn: (body: { category: SessionCategory; label?: string }) => api.post('/api/sessions/start', body),
+    mutationFn: (body: { category: SessionCategory; label?: string; projectId?: string }) => api.post('/api/sessions/start', body),
     onSuccess: () => {
       invalidate();
       setStarting(false);
@@ -84,7 +87,7 @@ export default function Sessions() {
           <h1 className="font-display text-xl font-extrabold tracking-tight text-ink-900 dark:text-white">{nouns.sessions}</h1>
           <p className="mt-0.5 text-xs text-ink-500">Start the timer, work, stop. Duration is recorded automatically — no manual hours.</p>
         </div>
-        <Button size="sm" variant="secondary" onClick={() => setManual({ category: 'STUDYING', minutes: 45, label: '', date: new Date().toISOString().slice(0, 10) })} icon={<Plus className="h-4 w-4" />}>
+        <Button size="sm" variant="secondary" onClick={() => setManual({ category: 'STUDYING', minutes: 45, label: '', date: new Date().toISOString().slice(0, 10), projectId: '' })} icon={<Plus className="h-4 w-4" />}>
           Add past session
         </Button>
       </div>
@@ -105,7 +108,8 @@ export default function Sessions() {
               {active && (
                 <p className="mt-0.5 text-xs text-ink-500">
                   {CATEGORY_META[active.category]?.label}
-                  {active.label ? ` · ${active.label}` : ''} · started {relativeTime(active.startedAt)}
+                  {active.label ? ` · ${active.label}` : ''}
+                  {active.project ? ` · ${active.project.title}` : ''} · started {relativeTime(active.startedAt)}
                 </p>
               )}
             </div>
@@ -125,7 +129,20 @@ export default function Sessions() {
                     </option>
                   ))}
                 </Select>
-                <Button loading={start.isPending} onClick={() => start.mutate({ category: startForm.category, label: startForm.label || undefined })} icon={<Play className="h-4 w-4" />}>
+                {projectList.length > 0 && (
+                  <Select
+                    className="w-auto min-w-[140px]"
+                    value={startForm.projectId}
+                    onChange={(e) => setStartForm((f) => ({ ...f, projectId: e.target.value }))}
+                    aria-label={`${nouns.project} for this session`}
+                  >
+                    <option value="">No {nouns.project.toLowerCase()}</option>
+                    {projectList.map((p) => (
+                      <option key={p.id} value={p.id}>{p.code ? `${p.code} · ${p.title}` : p.title}</option>
+                    ))}
+                  </Select>
+                )}
+                <Button loading={start.isPending} onClick={() => start.mutate({ category: startForm.category, label: startForm.label || undefined, projectId: startForm.projectId || undefined })} icon={<Play className="h-4 w-4" />}>
                   Start session
                 </Button>
               </>
@@ -235,6 +252,8 @@ export default function Sessions() {
                   <div className="flex flex-wrap items-center gap-1.5">
                     <span className="text-[13px] font-semibold text-ink-900 dark:text-white">{CATEGORY_META[s.category]?.label ?? s.category}</span>
                     {s.label && <span className="text-[11px] text-ink-500">· {s.label}</span>}
+                    {s.project && <Badge tone="neutral">{s.project.title}</Badge>}
+                    {(s.breakCount ?? 0) > 0 && <span className="text-[10px] text-ink-400">{s.breakCount} break{s.breakCount === 1 ? '' : 's'}</span>}
                     {s.isDemo && <Badge tone="warning">Sample</Badge>}
                     {s.focusScore && <Badge tone="brand">focus {s.focusScore}/5</Badge>}
                   </div>
@@ -304,7 +323,7 @@ export default function Sessions() {
               loading={addManual.isPending}
               onClick={() =>
                 manual &&
-                addManual.mutate({ category: manual.category, minutes: manual.minutes, label: manual.label || undefined, date: manual.date })
+                addManual.mutate({ category: manual.category, minutes: manual.minutes, label: manual.label || undefined, date: manual.date, projectId: manual.projectId || undefined })
               }
             >
               Add session
@@ -333,6 +352,14 @@ export default function Sessions() {
             </div>
             <Field label="Label (optional)">
               <Input value={manual.label} onChange={(e) => setManual({ ...manual, label: e.target.value })} placeholder="e.g. Chapter 6 revision" />
+              {projectList.length > 0 && (
+                <Select value={manual.projectId} onChange={(e) => setManual({ ...manual, projectId: e.target.value })} aria-label={`${nouns.project} for this session`}>
+                  <option value="">No {nouns.project.toLowerCase()}</option>
+                  {projectList.map((p) => (
+                    <option key={p.id} value={p.id}>{p.code ? `${p.code} · ${p.title}` : p.title}</option>
+                  ))}
+                </Select>
+              )}
             </Field>
           </div>
         )}

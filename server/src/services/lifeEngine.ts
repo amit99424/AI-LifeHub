@@ -50,6 +50,12 @@ export interface CorrelationsResult {
 
 /** One day, already joined across the domains. Every field optional. */
 export interface LifeDay {
+  /** Minutes logged against any project today (study, work or client). */
+  projectMinutes?: number | null;
+  /** Tasks completed that belonged to a project. */
+  projectTasksDone?: number | null;
+  /** Open tasks whose deadline has passed. */
+  overdueTasks?: number | null;
   date: string;
   score: number | null;
   sleepHours: number | null;
@@ -345,6 +351,12 @@ export interface PeriodSummary {
   moodDays: number;
   /** Days on which a habit was checked in, for consistency claims. */
   habitDays: number;
+  /** Minutes logged against a project (subject, client, initiative). */
+  projectMinutes: number;
+  /** Days on which any project time was logged. */
+  projectDays: number;
+  /** Open tasks past their deadline on the last day of the window. */
+  overdueTasks: number | null;
 }
 
 function avg(nums: (number | null)[]): number | null {
@@ -373,7 +385,9 @@ export function summarisePeriod(days: LifeDay[]): PeriodSummary {
         d.exerciseMinutes !== null ||
         d.stress !== null ||
         d.energy !== null ||
-        d.sleepQuality !== null,
+        d.sleepQuality !== null ||
+        (d.projectMinutes ?? 0) > 0 ||
+        (d.projectTasksDone ?? 0) > 0,
     ).length,
     score: avg(days.map((d) => d.score)),
     tasksCompleted: sum(days.map((d) => d.tasksCompleted)),
@@ -388,6 +402,9 @@ export function summarisePeriod(days: LifeDay[]): PeriodSummary {
     exerciseMinutes: avg(days.map((d) => d.exerciseMinutes)),
     moodDays: days.filter((d) => d.mood !== null).length,
     habitDays: days.filter((d) => (d.habitRate ?? 0) > 0).length,
+    projectMinutes: days.reduce((a, d) => a + (d.projectMinutes ?? 0), 0),
+    projectDays: days.filter((d) => (d.projectMinutes ?? 0) > 0).length,
+    overdueTasks: days.length ? (days[days.length - 1].overdueTasks ?? null) : null,
   };
 }
 

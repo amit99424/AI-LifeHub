@@ -18,6 +18,7 @@ import {
   Flame,
   GripVertical,
   HeartPulse,
+  Layers,
   Minus,
   Moon,
   RotateCcw,
@@ -69,6 +70,9 @@ const WIDGET_SPAN: Partial<Record<WidgetId, string>> = {
   strengths: 'lg:col-span-1',
   correlations: 'lg:col-span-2',
   timeofday: 'lg:col-span-1',
+  studywork: 'lg:col-span-2',
+  goals: 'lg:col-span-1',
+  overdue: 'lg:col-span-1',
 };
 
 /** A delta chip: direction, magnitude, and whether it is inside the noise band. */
@@ -567,6 +571,119 @@ export function DashboardWidget({
             </>
           ) : (
             <EmptyState icon={<Clock className="h-4 w-4" />} title="No clear best time yet" description={bt?.note ?? 'Complete tasks or run sessions across a few different hours and a pattern may appear.'} />
+          )}
+        </Card>
+      );
+    }
+
+    // ── study & work ─────────────────────────────────────────
+    // These three read `data.studyWork`, which the server builds from the same
+    // 30-day window the rest of the payload uses. No widget derives a number.
+    case 'studywork': {
+      const sw = data.studyWork;
+      const projects = sw?.projects ?? [];
+      if (!sw || projects.length === 0) {
+        return (
+          <Card className="p-4">
+            <CardHeader title={nouns.projects} subtitle="Containers and the time filed under them" icon={<Layers className="h-4 w-4" />} />
+            <EmptyState
+              icon={<Layers className="h-4 w-4" />}
+              title={`No ${nouns.projects.toLowerCase()} yet`}
+              description={`A ${nouns.project.toLowerCase()} collects tasks, sessions and deadlines in one place, and gives them a progress figure that means something.`}
+              action={<Link to="/projects" className="text-[11px] font-bold text-brand-600 hover:underline dark:text-brand-400">Create one →</Link>}
+            />
+          </Card>
+        );
+      }
+      const max = Math.max(...projects.map((p) => p.minutes), 1);
+      return (
+        <Card className="p-4">
+          <CardHeader
+            title={nouns.projects}
+            subtitle="Open containers, their tasks and the time filed under them (30 days)"
+            icon={<Layers className="h-4 w-4" />}
+            action={<Link to="/projects" className="text-[11px] font-semibold text-brand-600 hover:underline dark:text-brand-400">All →</Link>}
+          />
+          <div className="mt-2 space-y-2">
+            {projects.slice(0, 5).map((p) => (
+              <Link key={p.id} to={`/projects/${p.id}`} className="block rounded-lg border border-[rgb(var(--border))] p-2 transition hover:border-brand-300/60">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate text-[12px] font-bold text-ink-900 dark:text-white">{p.title}</span>
+                  <span className="shrink-0 text-[10px] text-ink-400">{p.tasks} task{p.tasks === 1 ? '' : 's'}</span>
+                </div>
+                <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-ink-200 dark:bg-ink-800">
+                  <div className="h-full rounded-full bg-gradient-to-r from-brand-500 to-brand-400" style={{ width: `${Math.round((p.minutes / max) * 100)}%` }} />
+                </div>
+                <p className="mt-0.5 text-[10px] text-ink-400">
+                  {p.minutes ? formatMinutes(p.minutes) : 'no time yet'}
+                  {p.deadline ? ` · due ${formatDate(new Date(p.deadline))}` : ''}
+                </p>
+              </Link>
+            ))}
+          </div>
+        </Card>
+      );
+    }
+
+    case 'goals': {
+      const goals = data.studyWork?.goals ?? [];
+      return (
+        <Card className="p-4">
+          <CardHeader
+            title="Goals"
+            subtitle="Against their own targets"
+            icon={<Target className="h-4 w-4" />}
+            action={<Link to="/goals" className="text-[11px] font-semibold text-brand-600 hover:underline dark:text-brand-400">All →</Link>}
+          />
+          {goals.length === 0 ? (
+            <EmptyState icon={<Target className="h-4 w-4" />} title="No active goals" description="A target turns effort into something you can measure." />
+          ) : (
+            <div className="mt-2 space-y-2">
+              {goals.slice(0, 4).map((g) => {
+                const pct = g.target && g.target > 0 ? Math.min(100, Math.round(((g.current ?? 0) / g.target) * 100)) : null;
+                return (
+                  <div key={g.id}>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate text-[12px] font-semibold text-ink-800 dark:text-ink-100">{g.title}</span>
+                      <span className="shrink-0 text-[10px] text-ink-400">
+                        {g.target ? `${g.current ?? 0}/${g.target} ${g.metric ?? ''}` : 'no target'}
+                      </span>
+                    </div>
+                    {pct !== null ? (
+                      <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-ink-200 dark:bg-ink-800">
+                        <div className="h-full rounded-full bg-gradient-to-r from-brand-500 to-brand-400" style={{ width: `${pct}%` }} />
+                      </div>
+                    ) : (
+                      <p className="mt-0.5 text-[10px] text-ink-400">Progress is not a percentage without a target</p>
+                    )}
+                    {g.deadline && <p className="mt-0.5 text-[10px] text-ink-400">due {formatDate(new Date(g.deadline))}</p>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Card>
+      );
+    }
+
+    case 'overdue': {
+      const n = data.studyWork?.overdueTasks ?? 0;
+      return (
+        <Card className="p-4">
+          <CardHeader title="Overdue work" subtitle="Tasks past their due date" icon={<Clock className="h-4 w-4" />} />
+          {n === 0 ? (
+            <div className="mt-2 flex items-center gap-2 rounded-lg border border-emerald-200/60 bg-emerald-50/60 p-2.5 dark:border-emerald-500/20 dark:bg-emerald-500/10">
+              <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+              <p className="text-[12px] font-semibold text-emerald-800 dark:text-emerald-300">Nothing overdue</p>
+            </div>
+          ) : (
+            <div className="mt-2">
+              <p className="font-display text-3xl font-extrabold tabular-nums text-ink-900 dark:text-white">{n}</p>
+              <p className="text-[11px] text-ink-500">task{n === 1 ? '' : 's'} past their due date</p>
+              <Link to="/tasks?filter=overdue" className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-brand-600 hover:underline dark:text-brand-400">
+                See them <ArrowRight className="h-3 w-3" />
+              </Link>
+            </div>
           )}
         </Card>
       );

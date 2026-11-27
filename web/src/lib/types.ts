@@ -33,6 +33,16 @@ export interface Task {
   updatedAt: string;
   overdue?: boolean;
   dueToday?: boolean;
+  // Phase 4: container, parent and recurrence
+  projectId?: string | null;
+  parentId?: string | null;
+  goalId?: string | null;
+  recurrence?: RecurrenceRule;
+  recurrenceEvery?: number;
+  recurrenceUntil?: string | null;
+  project?: { id: string; title: string; code: string | null } | null;
+  goal?: { id: string; title: string } | null;
+  _count?: { subtasks: number };
 }
 
 export interface TasksResponse {
@@ -127,6 +137,12 @@ export interface WorkSession {
   date: string;
   isDemo: boolean;
   elapsedSec?: number;
+  /** The container this session is filed under, if any. */
+  projectId?: string | null;
+  project?: { id: string; title: string; code: string | null } | null;
+  /** One row per pause, so break length is measured rather than guessed. */
+  breakCount?: number;
+  breakMinutes?: number;
 }
 
 export interface SessionsResponse {
@@ -306,6 +322,86 @@ export interface OccupationProfile {
   widgets: WidgetId[];
   aiFocus: string;
   billableHours: boolean;
+  /** The container kind a new project gets by default. */
+  defaultKind?: ProjectKind;
+  /** Kinds worth offering first, most likely first. */
+  kinds?: ProjectKind[];
+  /** What a goal measures: "Syllabus", "Deliverable", "Outcome". */
+  goalNoun?: string;
+}
+
+// ── Phase 4: containers, goals, recurrence ────────────────────
+export type ProjectKind = 'STUDY' | 'WORK' | 'CLIENT' | 'BUSINESS' | 'JOB_SEARCH' | 'PERSONAL';
+export type ProjectStatus = 'PLANNING' | 'ACTIVE' | 'ON_HOLD' | 'COMPLETED';
+export type RecurrenceRule = 'NONE' | 'DAILY' | 'WEEKDAYS' | 'WEEKLY' | 'MONTHLY';
+export type GoalStatus = 'ACTIVE' | 'ACHIEVED' | 'PAUSED' | 'ABANDONED';
+
+export interface ProjectDto {
+  id: string;
+  title: string;
+  description: string | null;
+  kind: ProjectKind;
+  status: ProjectStatus;
+  priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+  code: string | null;
+  color: string | null;
+  deadline: string | null;
+  archivedAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  tasks: { total: number; done: number; open: number };
+  /** null when the project has no tasks — there is no percentage of nothing. */
+  progress: number | null;
+  sessions: number;
+  sessionMinutes: number;
+  goals: number;
+  isDemo: boolean;
+}
+
+export interface MilestoneDto {
+  id: string;
+  title: string;
+  dueDate: string | null;
+  completedAt: string | null;
+  order: number;
+}
+
+export interface GoalDto {
+  id: string;
+  title: string;
+  description: string | null;
+  status: GoalStatus;
+  metric: string | null;
+  target: number | null;
+  current: number | null;
+  /** null when there is no target to measure against. */
+  progress: number | null;
+  deadline: string | null;
+  achievedAt: string | null;
+  project: { id: string; title: string; kind: ProjectKind } | null;
+  tasks: { total: number; done: number };
+  milestones: MilestoneDto[];
+  milestonesDone: number;
+  milestonesTotal: number;
+  isDemo: boolean;
+  createdAt: string;
+}
+
+export interface OverdueAnalyticsDto {
+  today: string;
+  count: number;
+  oldestDays: number;
+  items: { id: string; title: string; dueDate: string; priority: string; category: string; project: string | null }[];
+  ageBuckets: Record<string, number>;
+  byProject: { projectId: string | null; title: string; count: number }[];
+  byCategory: Record<string, number>;
+}
+
+export interface StudyWorkDto {
+  overdueTasks: number;
+  projects: { id: string; title: string; kind: ProjectKind; status: ProjectStatus; deadline: string | null; tasks: number; minutes: number }[];
+  goals: { id: string; title: string; current: number | null; target: number | null; metric: string | null; deadline: string | null }[];
+  minutesByProject: { id: string; title: string; minutes: number }[];
 }
 
 export interface ResolvedOccupation {
@@ -350,6 +446,7 @@ export interface DashboardResponse {
   widgets?: WidgetId[];
   widgetLayout?: { order: WidgetId[] | null; hidden: WidgetId[]; available: WidgetId[] };
   comparisons?: { day: ComparisonDto; week: ComparisonDto; month: ComparisonDto };
+  studyWork?: StudyWorkDto;
   occupation: ResolvedOccupation;
   greetingName: string;
   onboarded: boolean;
@@ -412,7 +509,10 @@ export type WidgetId =
   | 'consistency'
   | 'strengths'
   | 'correlations'
-  | 'timeofday';
+  | 'timeofday'
+  | 'studywork'
+  | 'goals'
+  | 'overdue';
 
 export interface PeriodSummaryDto {
   days: number;

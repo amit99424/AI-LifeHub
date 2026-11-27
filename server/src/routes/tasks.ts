@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { TaskPriority, TaskStatus, type Prisma } from '@prisma/client';
+import { RecurrenceRule, TaskPriority, TaskStatus, type Prisma } from '@prisma/client';
 import { prisma } from '../lib/prisma.js';
 import { ApiError, ah, validate } from '../lib/http.js';
 import { requireAuth, userTz } from '../middleware/auth.js';
@@ -8,6 +8,78 @@ import { dateKey, localDateKey, todayKey } from '../lib/dates.js';
 import { resolveOccupation } from '../services/occupations.js';
 
 export const tasksRouter = Router();
+
+/** Keeps only the y/m/d of a date, in the user's zone, as a UTC midnight. */
+function dayOnly(d: Date): Date {
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+}
+
+/**
+ * The next due date for a recurring task.
+ *
+ * Computed from the *completed* instance's due date, not from "now", so a task
+ * completed late does not silently shift the whole series forward. WEEKDAYS
+ * skips Saturday and Sunday. Returns null when the series has run out, which
+ * is what `recurrenceUntil` means.
+ */
+export function nextOccurrence(
+  from: Date,
+  rule: RecurrenceRule,
+  every: number,
+  until: Date | null,
+): Date | null {
+  if (rule === 'NONE') return null;
+  const step = Math.max(1, every);
+  let next = dayOnly(from);
+  if (rule === 'DAILY') {
+    next.setUTCDate(next.getUTCDate() + step);
+  } else if (rule === 'WEEKDAYS') {
+    do {
+      next.setUTCDate(next.getUTCDate() + 1);
+    } while (next.getUTCDay() === 0 || next.getUTCDay() === 6);
+  } else if (rule === 'WEEKLY') {
+    next.setUTCDate(next.getUTCDate() + 7 * step);
+  } else if (rule === 'MONTHLY') {
+    next.setUTCMonth(next.getUTCMonth() + step);
+  }
+  if (until && next.getTime() > dayOnly(until).getTime()) return null;
+  return next;
+}
+
+/** Validates that a linked container belongs to this user. Never trust an id. */
+async function assertOwnedLinks(
+  userId: string,
+  links: { projectId?: string | null; parentId?: string | null; goalId?: string | null },
+) {
+  const checks: Promise<unknown>[] = [];
+  if (links.projectId) {
+    checks.push(
+      prisma.project.findFirst({ where: { id: links.projectId, userId }, select: { id: true } }).then((p) => {
+        if (!p) throw ApiError.badRequest('That project does not exist');
+      }),
+    );
+  }
+  if (links.goalId) {
+    checks.push(
+      prisma.goal.findFirst({ where: { id: links.goalId, userId }, select: { id: true } }).then((g) => {
+        if (!g) throw ApiError.badRequest('That goal does not exist');
+      }),
+    );
+  }
+  if (links.parentId) {
+    checks.push(
+      prisma.task
+        .findFirst({ where: { id: links.parentId, userId }, select: { id: true, parentId: true } })
+        .then((t) => {
+          if (!t) throw ApiError.badRequest('That parent task does not exist');
+          // One level only. Deeper nesting makes "how much of this is done"
+          // ambiguous, and nobody asked for it.
+          if (t.parentId) throw ApiError.badRequest('A subtask cannot have its own subtasks');
+        }),
+    );
+  }
+  await Promise.all(checks);
+}
 tasksRouter.use(requireAuth);
 
 const priorityEnum = z.nativeEnum(TaskPriority);
@@ -22,6 +94,12 @@ const createSchema = z.object({
   priority: priorityEnum.default('MEDIUM'),
   status: statusEnum.default('TODO'),
   dueDate: z.string().datetime({ offset: true }).or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).nullable().optional(),
+  projectId: z.string().uuid().nullable().optional(),
+  parentId: z.string().uuid().nullable().optional(),
+  goalId: z.string().uuid().nullable().optional(),
+  recurrence: z.nativeEnum(RecurrenceRule).optional(),
+  recurrenceEvery: z.number().int().min(1).max(30).optional(),
+  recurrenceUntil: z.string().datetime({ offset: true }).or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).nullable().optional(),
 });
 
 const updateSchema = createSchema.partial().extend({
@@ -35,6 +113,11 @@ const listSchema = z.object({
   category: z.string().max(40).optional(),
   search: z.string().max(120).optional(),
   due: z.enum(['today', 'overdue', 'week', 'none']).optional(),
+  projectId: z.string().uuid().optional(),
+  goalId: z.string().uuid().optional(),
+  parentId: z.string().uuid().optional(),
+  // The task list shows top-level tasks; a parent's subtasks are fetched with it.
+  topLevel: z.enum(['true', 'false']).optional(),
   sort: z.enum(['dueDate', 'createdAt', 'priority', 'title']).optional(),
   limit: z.coerce.number().int().min(1).max(200).default(100),
   offset: z.coerce.number().int().min(0).default(0),
@@ -89,6 +172,12 @@ tasksRouter.get(
     }
     if (q.priority) where.priority = q.priority;
     if (q.category) where.category = q.category;
+    if (q.projectId) where.projectId = q.projectId;
+    if (q.goalId) where.goalId = q.goalId;
+    if (q.parentId) where.parentId = q.parentId;
+    // Default view is top-level tasks: a subtask shown next to its parent is
+    // the same work counted twice.
+    if (q.topLevel === 'true') where.parentId = null;
     if (q.search) {
       where.OR = [
         { title: { contains: q.search, mode: 'insensitive' } },
@@ -119,7 +208,17 @@ tasksRouter.get(
             : [{ dueDate: { sort: 'asc', nulls: 'last' } }, { priority: 'desc' }];
 
     const [items, total, counts] = await Promise.all([
-      prisma.task.findMany({ where, orderBy, take: q.limit, skip: q.offset }),
+      prisma.task.findMany({
+        where,
+        orderBy,
+        take: q.limit,
+        skip: q.offset,
+        include: {
+          _count: { select: { subtasks: true } },
+          project: { select: { id: true, title: true, code: true } },
+          goal: { select: { id: true, title: true } },
+        },
+      }),
       prisma.task.count({ where }),
       prisma.task.groupBy({ by: ['status'], where: { userId: req.user!.id }, _count: { _all: true } }),
     ]);
@@ -159,6 +258,7 @@ tasksRouter.post(
       });
       category = resolved.profile.taskCategories[0] ?? 'General';
     }
+    await assertOwnedLinks(req.user!.id, body);
     const task = await prisma.task.create({
       data: {
         userId: req.user!.id,
@@ -171,9 +271,68 @@ tasksRouter.post(
         startedAt: body.status === 'IN_PROGRESS' ? now : null,
         completedAt: body.status === 'COMPLETED' ? now : null,
         timeTakenSec: body.status === 'COMPLETED' ? 0 : null,
+        projectId: body.projectId ?? null,
+        parentId: body.parentId ?? null,
+        goalId: body.goalId ?? null,
+        recurrence: body.recurrence ?? 'NONE',
+        recurrenceEvery: body.recurrenceEvery ?? 1,
+        recurrenceUntil: parseDue(body.recurrenceUntil, tz),
       },
     });
     res.status(201).json({ task });
+  }),
+);
+
+// GET /api/tasks/analytics/overdue
+// Everything here is counted from recorded rows; nothing is estimated.
+tasksRouter.get(
+  '/analytics/overdue',
+  ah(async (req, res) => {
+    const tz = userTz(req);
+    const now = new Date();
+    const open = await prisma.task.findMany({
+      where: { userId: req.user!.id, status: { in: ['TODO', 'IN_PROGRESS'] }, dueDate: { not: null, lt: now } },
+      select: { id: true, title: true, dueDate: true, priority: true, category: true, projectId: true, project: { select: { title: true } } },
+      orderBy: { dueDate: 'asc' },
+      take: 500,
+    });
+
+    const byProject = new Map<string, { projectId: string | null; title: string; count: number }>();
+    const byCategory = new Map<string, number>();
+    const ageBuckets = { '1 day': 0, '2-3 days': 0, '4-7 days': 0, 'over a week': 0 };
+    let oldestDays = 0;
+
+    for (const t of open) {
+      const key = t.projectId ?? '__none__';
+      const entry = byProject.get(key) ?? { projectId: t.projectId, title: t.project?.title ?? 'No project', count: 0 };
+      entry.count += 1;
+      byProject.set(key, entry);
+      byCategory.set(t.category, (byCategory.get(t.category) ?? 0) + 1);
+      const days = Math.max(0, Math.floor((now.getTime() - new Date(t.dueDate!).getTime()) / 86_400_000));
+      oldestDays = Math.max(oldestDays, days);
+      if (days <= 1) ageBuckets['1 day'] += 1;
+      else if (days <= 3) ageBuckets['2-3 days'] += 1;
+      else if (days <= 7) ageBuckets['4-7 days'] += 1;
+      else ageBuckets['over a week'] += 1;
+    }
+
+    res.json({
+      today: todayKey(tz),
+      count: open.length,
+      oldestDays,
+      items: open.slice(0, 20).map((t) => ({
+        id: t.id,
+        title: t.title,
+        dueDate: t.dueDate,
+        priority: t.priority,
+        category: t.category,
+        project: t.project?.title ?? null,
+        daysOverdue: Math.max(0, Math.floor((now.getTime() - new Date(t.dueDate!).getTime()) / 86_400_000)),
+      })),
+      byProject: [...byProject.values()].sort((a, b) => b.count - a.count).slice(0, 8),
+      byCategory: [...byCategory.entries()].map(([category, count]) => ({ category, count })).sort((a, b) => b.count - a.count),
+      ageBuckets: Object.entries(ageBuckets).map(([label, count]) => ({ label, count })),
+    });
   }),
 );
 
@@ -187,19 +346,57 @@ tasksRouter.patch(
     const existing = await prisma.task.findFirst({ where: { id: req.params.id, userId: req.user!.id } });
     if (!existing) throw ApiError.notFound('Task not found');
 
+    await assertOwnedLinks(req.user!.id, body);
     const data: Prisma.TaskUpdateInput = {};
     if (body.title !== undefined) data.title = body.title;
     if (body.description !== undefined) data.description = body.description;
     if (body.category !== undefined) data.category = body.category;
     if (body.priority !== undefined) data.priority = body.priority;
     if (body.dueDate !== undefined) data.dueDate = parseDue(body.dueDate, tz);
+    if (body.projectId !== undefined) data.project = body.projectId ? { connect: { id: body.projectId } } : { disconnect: true };
+    if (body.parentId !== undefined) data.parent = body.parentId ? { connect: { id: body.parentId } } : { disconnect: true };
+    if (body.goalId !== undefined) data.goal = body.goalId ? { connect: { id: body.goalId } } : { disconnect: true };
+    if (body.recurrence !== undefined) data.recurrence = body.recurrence;
+    if (body.recurrenceEvery !== undefined) data.recurrenceEvery = body.recurrenceEvery;
+    if (body.recurrenceUntil !== undefined) data.recurrenceUntil = parseDue(body.recurrenceUntil, tz);
     if (body.status !== undefined) {
       data.status = body.status;
       Object.assign(data, deriveTaskState(existing, body.status));
     }
 
-    const task = await prisma.task.update({ where: { id: existing.id }, data });
-    res.json({ task });
+    // Completing a recurring task opens the next one in the same transaction:
+    // either the series advances or nothing happened, never a half-move.
+    const becomingDone = body.status === 'COMPLETED' && existing.status !== 'COMPLETED';
+    const nextDue = becomingDone
+      ? nextOccurrence(existing.dueDate ?? new Date(), existing.recurrence, existing.recurrenceEvery, existing.recurrenceUntil)
+      : null;
+
+    const [task, spawned] = await prisma.$transaction(async (tx) => {
+      const updated = await tx.task.update({ where: { id: existing.id }, data });
+      let next = null;
+      if (becomingDone && nextDue) {
+        next = await tx.task.create({
+          data: {
+            userId: existing.userId,
+            title: existing.title,
+            description: existing.description,
+            category: existing.category,
+            priority: existing.priority,
+            status: 'TODO',
+            dueDate: nextDue,
+            projectId: existing.projectId,
+            parentId: existing.parentId,
+            goalId: existing.goalId,
+            recurrence: existing.recurrence,
+            recurrenceEvery: existing.recurrenceEvery,
+            recurrenceUntil: existing.recurrenceUntil,
+            recurrenceSource: existing.id,
+          },
+        });
+      }
+      return [updated, next];
+    });
+    res.json({ task, nextOccurrence: spawned });
   }),
 );
 
@@ -210,11 +407,39 @@ tasksRouter.post(
     const existing = await prisma.task.findFirst({ where: { id: req.params.id, userId: req.user!.id } });
     if (!existing) throw ApiError.notFound('Task not found');
     const next: TaskStatus = existing.status === 'COMPLETED' ? 'TODO' : 'COMPLETED';
-    const task = await prisma.task.update({
-      where: { id: existing.id },
-      data: { status: next, ...deriveTaskState(existing, next) },
+    const nextDue =
+      next === 'COMPLETED'
+        ? nextOccurrence(existing.dueDate ?? new Date(), existing.recurrence, existing.recurrenceEvery, existing.recurrenceUntil)
+        : null;
+    const [task, spawned] = await prisma.$transaction(async (tx) => {
+      const updated = await tx.task.update({
+        where: { id: existing.id },
+        data: { status: next, ...deriveTaskState(existing, next) },
+      });
+      let created = null;
+      if (next === 'COMPLETED' && nextDue) {
+        created = await tx.task.create({
+          data: {
+            userId: existing.userId,
+            title: existing.title,
+            description: existing.description,
+            category: existing.category,
+            priority: existing.priority,
+            status: 'TODO',
+            dueDate: nextDue,
+            projectId: existing.projectId,
+            parentId: existing.parentId,
+            goalId: existing.goalId,
+            recurrence: existing.recurrence,
+            recurrenceEvery: existing.recurrenceEvery,
+            recurrenceUntil: existing.recurrenceUntil,
+            recurrenceSource: existing.id,
+          },
+        });
+      }
+      return [updated, created];
     });
-    res.json({ task });
+    res.json({ task, nextOccurrence: spawned });
   }),
 );
 

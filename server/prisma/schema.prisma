@@ -56,6 +56,8 @@ model User {
   messages        Message[]
   usage           UserUsage[]
   auditLogs       AuditLog[]
+  projects        Project[]
+  goals           Goal[]
 
   @@index([createdAt])
 }
@@ -253,6 +255,24 @@ model Task {
   completedAt  DateTime? // set automatically when moved to COMPLETED
   timeTakenSec Int? // derived automatically: completedAt - startedAt (or createdAt)
 
+  // Containers and hierarchy. All nullable, so every existing task keeps
+  // working and simply belongs to nothing.
+  projectId String?   @db.Uuid
+  project   Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  parentId  String?   @db.Uuid
+  parent    Task?     @relation("TaskSubtasks", fields: [parentId], references: [id], onDelete: Cascade)
+  subtasks  Task[]    @relation("TaskSubtasks")
+  goalId    String?   @db.Uuid
+  goal      Goal?     @relation(fields: [goalId], references: [id], onDelete: SetNull)
+
+  // Recurrence. The next instance is created when this one is completed, in
+  // the same transaction -- there is no scheduler on the host, so a rule that
+  // needed one would silently stop repeating.
+  recurrence       RecurrenceRule @default(NONE)
+  recurrenceEvery  Int            @default(1) // every N days/weeks/months
+  recurrenceUntil  DateTime?
+  recurrenceSource String?        @db.Uuid // the task this one was spawned from
+
   isDemo    Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -261,6 +281,123 @@ model Task {
   @@index([userId, dueDate])
   @@index([userId, completedAt])
   @@index([userId, priority, status])
+  @@index([userId, projectId])
+  @@index([parentId])
+  @@index([userId, goalId])
+}
+
+enum RecurrenceRule {
+  NONE
+  DAILY
+  WEEKDAYS
+  WEEKLY
+  MONTHLY
+}
+
+enum ProjectKind {
+  STUDY // a subject or course
+  WORK // a work project or initiative
+  CLIENT // client work for a freelancer
+  BUSINESS // a business initiative
+  JOB_SEARCH // an application track
+  PERSONAL
+}
+
+enum ProjectStatus {
+  PLANNING
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+}
+
+/// One container for subjects, work projects, client engagements, business
+/// initiatives and job applications. They differ in vocabulary, not shape --
+/// the words come from OCCUPATION_PROFILES, the columns are shared.
+model Project {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title       String
+  description String?
+  kind        ProjectKind   @default(WORK)
+  status      ProjectStatus @default(PLANNING)
+  priority    TaskPriority  @default(MEDIUM)
+  /// A subject code ("CS101") or a client name. Optional.
+  code        String?
+  color       String?
+
+  deadline   DateTime?
+  archivedAt DateTime?
+  completedAt DateTime?
+
+  tasks      Task[]
+  sessions   WorkSession[]
+  goals      Goal[]
+
+  isDemo    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, status])
+  @@index([userId, archivedAt])
+  @@index([userId, kind])
+}
+
+enum GoalStatus {
+  ACTIVE
+  ACHIEVED
+  PAUSED
+  ABANDONED
+}
+
+model Goal {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title       String
+  description String?
+  status      GoalStatus @default(ACTIVE)
+  /// What the number means ("chapters", "interviews"). Free text so a goal
+  /// is not forced into a unit the user does not think in.
+  metric      String?
+  target      Float?
+  current     Float? // maintained by the user; never inferred
+  deadline    DateTime?
+  achievedAt  DateTime?
+
+  projectId String?  @db.Uuid
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  tasks      Task[]
+  milestones Milestone[]
+
+  isDemo    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, status])
+  @@index([userId, projectId])
+}
+
+model Milestone {
+  id     String @id @default(uuid()) @db.Uuid
+  goalId String @db.Uuid
+  goal   Goal   @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  // Denormalised so isolation checks never need a join.
+  userId String @db.Uuid
+
+  title       String
+  dueDate     DateTime?
+  completedAt DateTime?
+  order       Int      @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([goalId])
+  @@index([userId])
 }
 
 enum HabitFrequency {
@@ -384,12 +521,34 @@ model WorkSession {
   focusScore  Int? // self reported 1-5 at stop (optional)
   notes       String?
   date        DateTime        @db.Date
+  projectId   String?         @db.Uuid
+  project     Project?        @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  breaks      SessionBreak[]
   isDemo      Boolean         @default(false)
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 
   @@index([userId, date])
   @@index([userId, status])
+  @@index([userId, projectId])
+}
+
+/// One row per pause. `pausedMs` on the session stays as the fast total; these
+/// rows exist so break length is analysable instead of being one opaque number.
+model SessionBreak {
+  id        String      @id @default(uuid()) @db.Uuid
+  sessionId String      @db.Uuid
+  session   WorkSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  userId    String      @db.Uuid
+
+  startedAt DateTime
+  endedAt   DateTime?
+  seconds   Int? // filled when the break ends
+
+  createdAt DateTime @default(now())
+
+  @@index([sessionId])
+  @@index([userId])
 }
 
 // One row per calendar day — the denormalized "life log" that the AI pipeline
@@ -436,6 +595,8 @@ enum InsightType {
   JOURNAL
   WEEKLY_SUMMARY
   ROUTINE
+  FOCUS
+  GOALS
 }
 
 model AIInsight {

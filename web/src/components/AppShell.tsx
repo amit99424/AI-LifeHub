@@ -20,6 +20,8 @@ import {
   Timer,
   User,
   X,
+  Layers,
+  Target,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth, useTheme } from '@/lib/auth';
@@ -35,6 +37,10 @@ type NavItem = { to: string; label: string; icon: LucideIcon; badge?: string; la
 const NAV: NavItem[] = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/tasks', label: 'My Tasks', icon: CalendarCheck },
+  // One page for subjects, client projects, initiatives and applications --
+  // the word changes with the occupation, the page does not.
+  { to: '/projects', label: 'Projects', icon: Layers, labelFor: { STUDENT: 'Subjects', TEACHER: 'Courses', FREELANCER: 'Client Projects', BUSINESS_OWNER: 'Initiatives', ENTREPRENEUR: 'Ventures', JOB_SEEKER: 'Applications' } },
+  { to: '/goals', label: 'Goals', icon: Target },
   { to: '/habits', label: 'Habits', icon: Activity },
   { to: '/mood', label: 'Mood Tracker', icon: Smile },
   { to: '/journal', label: 'Journal', icon: BookOpen },

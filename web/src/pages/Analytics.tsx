@@ -23,9 +23,10 @@ import {
 } from 'recharts';
 import { BarChart3, CalendarRange, CheckCircle2, Clock, Flame, Smile, Timer, TrendingUp } from 'lucide-react';
 import { api, qs } from '@/lib/api';
-import type { AnalyticsResponse } from '@/lib/types';
+import type { AnalyticsResponse, OverdueAnalyticsDto } from '@/lib/types';
 import { Badge, Card, CardHeader, EmptyState, ErrorState, ProgressBar, Select, Skeleton } from '@/components/ui';
 import { MOOD_META, cn, formatDate, formatMinutes, todayIsoLocal } from '@/lib/utils';
+import { useNouns } from '@/lib/occupation';
 
 const PRESETS = [
   { value: '7d', label: 'Last 7 days' },
@@ -353,6 +354,8 @@ export default function Analytics() {
             </div>
           </Card>
 
+          <OverduePanel />
+
           <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--surface))]/60 px-4 py-2.5 text-[11px] text-ink-500">
             <Badge tone="brand">{data.streaks.current}-day current streak</Badge>
             <Badge tone="neutral">Longest {data.streaks.longest} days</Badge>
@@ -362,6 +365,73 @@ export default function Analytics() {
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * Overdue drill-down. Every figure is counted from the rows the endpoint
+ * returns; the age buckets are the server's, not recomputed here, so the page
+ * and the AI cannot disagree about how late the backlog is.
+ */
+function OverduePanel() {
+  const nouns = useNouns();
+  const overdue = useQuery({ queryKey: ['overdue'], queryFn: () => api.get<OverdueAnalyticsDto>('/api/tasks/analytics/overdue') });
+  const d = overdue.data;
+  if (overdue.isLoading) return <Skeleton className="h-40 w-full" />;
+  if (!d) return null;
+
+  return (
+    <Card>
+      <CardHeader
+        title="Overdue work"
+        subtitle={d.count === 0 ? 'Nothing past its due date' : `${d.count} task${d.count === 1 ? '' : 's'} past their due date · oldest ${d.oldestDays} day${d.oldestDays === 1 ? '' : 's'}`}
+      />
+      {d.count === 0 ? (
+        <EmptyState icon={<CheckCircle2 className="h-5 w-5" />} title="Nothing overdue" description="Every open task is still inside its due date." />
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-3">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-400">How late</p>
+            <div className="mt-1.5 space-y-1">
+              {Object.entries(d.ageBuckets).map(([label, n]) => {
+                const max = Math.max(...Object.values(d.ageBuckets), 1);
+                return (
+                  <div key={label} className="flex items-center gap-2">
+                    <span className="w-20 shrink-0 text-[11px] text-ink-500">{label}</span>
+                    <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-ink-200 dark:bg-ink-800">
+                      <div className="h-full rounded-full bg-rose-500" style={{ width: `${(n / max) * 100}%` }} />
+                    </div>
+                    <span className="w-6 text-right text-[11px] tabular-nums text-ink-600 dark:text-ink-300">{n}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-400">By {nouns.project.toLowerCase()}</p>
+            <div className="mt-1.5 space-y-1">
+              {d.byProject.slice(0, 5).map((p) => (
+                <div key={p.projectId ?? 'none'} className="flex items-center justify-between text-[11px]">
+                  <span className="truncate text-ink-600 dark:text-ink-300">{p.title}</span>
+                  <span className="tabular-nums font-semibold text-ink-800 dark:text-ink-100">{p.count}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-400">Oldest</p>
+            <div className="mt-1.5 space-y-1">
+              {d.items.slice(0, 5).map((t) => (
+                <div key={t.id} className="flex items-center justify-between gap-2 text-[11px]">
+                  <span className="truncate text-ink-600 dark:text-ink-300">{t.title}</span>
+                  <span className="shrink-0 tabular-nums text-rose-600 dark:text-rose-400">{formatDate(new Date(t.dueDate))}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </Card>
   );
 }
 

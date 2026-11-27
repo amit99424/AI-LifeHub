@@ -95,7 +95,14 @@ export async function collectActivityData(userId: string, { from, to }: WindowOp
     }),
     prisma.workSession.findMany({
       where: { userId, startedAt: { gte: from, lt: to }, status: 'COMPLETED' },
-      select: { startedAt: true, category: true, durationSec: true, focusScore: true },
+      select: {
+        startedAt: true,
+        category: true,
+        durationSec: true,
+        focusScore: true,
+        projectId: true,
+        project: { select: { title: true, kind: true } },
+      },
       orderBy: { startedAt: 'asc' },
       take: 400,
     }),
@@ -119,12 +126,40 @@ export async function collectActivityData(userId: string, { from, to }: WindowOp
 
   const openTasks = await prisma.task.findMany({
     where: { userId, status: { in: ['TODO', 'IN_PROGRESS'] } },
-    select: { id: true, title: true, priority: true, dueDate: true, createdAt: true, status: true },
+    select: {
+      id: true,
+      title: true,
+      priority: true,
+      dueDate: true,
+      createdAt: true,
+      status: true,
+      projectId: true,
+      project: { select: { title: true } },
+      parentId: true,
+    },
     orderBy: [{ dueDate: 'asc' }, { createdAt: 'asc' }],
     take: 120,
   });
 
-  return { tasks, completedTasks, habits, habitLogs, moodLogs, journalEntries, workSessions, dailyActivities, openTasks };
+  // Containers and goals, so the AI can name unfinished work the way the user
+  // filed it instead of inventing a category of its own.
+  const [projects, goals] = await Promise.all([
+    prisma.project.findMany({
+      where: { userId, archivedAt: null },
+      // Tasks come along so progress can be counted rather than guessed.
+      select: { id: true, title: true, kind: true, status: true, deadline: true, tasks: { select: { status: true } } },
+      orderBy: { deadline: 'asc' },
+      take: 40,
+    }),
+    prisma.goal.findMany({
+      where: { userId, status: 'ACTIVE' },
+      select: { id: true, title: true, target: true, current: true, metric: true, deadline: true, projectId: true },
+      orderBy: { deadline: 'asc' },
+      take: 30,
+    }),
+  ]);
+
+  return { tasks, completedTasks, habits, habitLogs, moodLogs, journalEntries, workSessions, dailyActivities, openTasks, projects, goals };
 }
 
 export type ActivityData = Awaited<ReturnType<typeof collectActivityData>>;

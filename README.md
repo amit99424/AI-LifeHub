@@ -82,11 +82,30 @@ Every signal in the app is a by-product of normal use — completing a task reco
 - Editing an entry invalidates its previous analysis so it can be re-run honestly
 - Aggregate theme extraction across the whole journal
 
+### Projects, subjects and client work
+One container, named by the person's occupation: a student's **subject**, a freelancer's **client project**, a business owner's **initiative**, a job seeker's **application**. Same columns underneath, which is why there is one page and not four.
+- Kind (`STUDY`, `WORK`, `CLIENT`, `BUSINESS`, `JOB_SEARCH`, `PERSONAL`), status (Planning / Active / On hold / Completed), priority, deadline, and an optional code that carries a subject code (`CS201`) or a client name
+- **Progress is derived, never typed**: done tasks over total tasks, and `null` when the container has no tasks — "0% of nothing" is not a measurement
+- Archive keeps the history and takes the container out of the way; delete keeps its tasks and sessions, unfiled
+- **Subtasks** are `Task.parentId`, one level deep. A subtask cannot have its own subtasks — the API says so rather than quietly allowing three levels
+- **Recurring tasks** carry the rule on the row and the next instance is materialised inside the same transaction when one is completed. The next date is computed from the *completed instance's* due date, not from the day it was ticked, so a late completion does not shift the series. There is no scheduler on a free tier, so a rule that needed one would silently stop repeating
+
+### Goals and milestones
+- A target and a unit (`13 chapters`, `5 clients`), or no target at all
+- Progress is `current / target`, capped at 100%, and `null` without a target — a goal measured only by milestones says so instead of drawing a bar
+- Milestones are dated steps inside a goal; a goal can belong to a container
+
 ### Study / work session tracker
 - Server-side timer with start / pause / resume / stop
+- Sessions can be **filed under a container**, so time is attributable rather than a single global total; time logged with no container is reported separately as unattributable
+- Each pause writes a **`SessionBreak` row**, so break length is measured rather than inferred from one opaque counter
 - Pauses are excluded from the duration; the final duration is computed from timestamps, not typed
 - Six categories, optional self-rated focus at the end, per-day and per-category charts
 - Optional manual backfill for sessions tracked elsewhere
+
+### Overdue analytics
+- Every open task past its due date, with its age bucket (1 day / 2–3 / 4–7 / over a week), oldest age, and counts by container and by category
+- Counted from the rows themselves, so the dashboard, the analytics page and the AI all read the same number
 
 ### Daily routine (optional context)
 - Sleep, exercise, screen time, meditation, social time and steps

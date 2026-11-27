@@ -77,6 +77,33 @@ export interface SessionFeatures {
   longestSessionMinutes: number | null;
 }
 
+/** Time and completions grouped by the container the user filed them under. */
+export interface ProjectFeatures {
+  /** Minutes logged against each project, largest first. */
+  byProject: { project: string; kind: string; minutes: number; sessions: number }[];
+  /** Open tasks per project, so "unfinished" has a name. */
+  openByProject: { project: string; open: number; overdue: number }[];
+  /** Minutes that belong to no project at all. */
+  unfiledMinutes: number;
+  projectsActive: number;
+  /** Open containers with their own task counts; `progressPct` is null with no tasks. */
+  progress: {
+    title: string;
+    kind: string;
+    status: string;
+    deadline: string | null;
+    tasksDone: number;
+    tasksTotal: number;
+    progressPct: number | null;
+  }[];
+}
+
+export interface GoalFeatures {
+  active: number;
+  withTarget: number;
+  behind: { title: string; current: number | null; target: number | null; metric: string | null; deadline: string | null }[];
+}
+
 export interface JournalFeatures {
   entries: number;
   analyzedEntries: number;
@@ -122,6 +149,8 @@ export interface FeatureBundle {
   sessions: SessionFeatures;
   journal: JournalFeatures;
   routine: RoutineFeatures;
+  studyWork: ProjectFeatures;
+  goals: GoalFeatures;
   availability: DataAvailability;
   derived: {
     moodVsProductivity: { label: string; moodScore: number; completions: number; sessions: number; days: number }[];
@@ -345,6 +374,77 @@ export function computeFeatures(data: ActivityData, opts: { from: Date; to: Date
     longestSessionMinutes: longest,
   };
 
+  // ── study / work containers ──────────────────────────────
+  // Grouped from the rows themselves: a project with no sessions and no open
+  // tasks does not appear, so an empty container is never reported as work.
+  const projectMinutes = new Map<string, { project: string; kind: string; minutes: number; sessions: number }>();
+  let unfiledMinutes = 0;
+  for (const s of data.workSessions) {
+    const mins = Math.round(s.durationSec / 60);
+    if (!s.projectId) {
+      unfiledMinutes += mins;
+      continue;
+    }
+    const key = s.projectId;
+    const entry = projectMinutes.get(key) ?? { project: s.project?.title ?? 'Untitled', kind: s.project?.kind ?? 'WORK', minutes: 0, sessions: 0 };
+    entry.minutes += mins;
+    entry.sessions += 1;
+    projectMinutes.set(key, entry);
+  }
+  const openByProject = new Map<string, { project: string; open: number; overdue: number }>();
+  const nowMs = Date.now();
+  for (const t of data.openTasks) {
+    if (!t.projectId) continue;
+    const entry = openByProject.get(t.projectId) ?? { project: t.project?.title ?? 'Untitled', open: 0, overdue: 0 };
+    entry.open += 1;
+    if (t.dueDate && new Date(t.dueDate).getTime() < nowMs) entry.overdue += 1;
+    openByProject.set(t.projectId, entry);
+  }
+  // Progress is derived the same way the project page derives it: done over
+  // total, and null when there is nothing to divide. The AI is told this in the
+  // prompt, so it can say "3 of 5 tasks" instead of inventing a percentage.
+  const progress = data.projects
+    .filter((p) => p.status !== 'COMPLETED')
+    .slice(0, 10)
+    .map((p) => {
+      const tasks = (p as { tasks?: { status: string }[] }).tasks ?? [];
+      const done = tasks.filter((t) => t.status === 'COMPLETED').length;
+      return {
+        title: p.title,
+        kind: p.kind,
+        status: p.status,
+        deadline: p.deadline ? dateKey(p.deadline) : null,
+        tasksDone: done,
+        tasksTotal: tasks.length,
+        progressPct: tasks.length ? Math.round((done / tasks.length) * 100) : null,
+      };
+    });
+
+  const studyWork: ProjectFeatures = {
+    byProject: [...projectMinutes.values()].sort((a, b) => b.minutes - a.minutes).slice(0, 10),
+    openByProject: [...openByProject.values()].sort((a, b) => b.open - a.open).slice(0, 10),
+    unfiledMinutes,
+    projectsActive: data.projects.filter((p) => p.status === 'ACTIVE').length,
+    progress,
+  };
+
+  const goals: GoalFeatures = {
+    active: data.goals.length,
+    withTarget: data.goals.filter((g) => g.target !== null && g.target > 0).length,
+    // "Behind" means a target exists and the recorded number is under half of
+    // it with a deadline inside the window. No deadline, no verdict.
+    behind: data.goals
+      .filter((g) => g.target !== null && g.target > 0 && (g.current ?? 0) / g.target < 0.5 && g.deadline)
+      .slice(0, 5)
+      .map((g) => ({
+        title: g.title,
+        current: g.current,
+        target: g.target,
+        metric: g.metric,
+        deadline: g.deadline ? dateKey(g.deadline) : null,
+      })),
+  };
+
   // ── journal ──────────────────────────────────────────────
   const analyzed = data.journalEntries.filter((j) => j.sentiment);
   const sentimentMix: Record<string, number> = {};
@@ -496,6 +596,8 @@ export function computeFeatures(data: ActivityData, opts: { from: Date; to: Date
     sessions: sessionFeatures,
     journal: journalFeatures,
     routine: routineFeatures,
+    studyWork,
+    goals,
     availability,
     derived: { moodVsProductivity, sleepVsProductivity, screenVsProductivity },
   };
