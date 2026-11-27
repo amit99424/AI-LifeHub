@@ -3,6 +3,7 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   Activity,
   BarChart3,
+  TrendingUp,
   FileBarChart,
   BookOpen,
   Bot,
@@ -62,6 +63,7 @@ const NAV: NavItem[] = [
   { to: '/routine', label: 'Daily Routine', icon: Moon },
   { to: '/assistant', label: 'AI Assistant', icon: Bot, badge: 'AI' },
   { to: '/analytics', label: 'Analytics', icon: BarChart3 },
+  { to: '/insights', label: 'Insights', icon: TrendingUp },
   { to: '/reports', label: 'Reports', icon: FileBarChart },
 ];
 

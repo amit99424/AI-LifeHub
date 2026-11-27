@@ -298,6 +298,10 @@ export interface AnalyticsResponse {
   categories: { category: string; completed: number; open: number }[];
   hourly: { hour: number; completions: number; focusMinutes: number }[];
   weekday: { day: string; completions: number; focusMinutes: number }[];
+  /** The engine's read over the same window, so a chart and a claim cannot disagree. */
+  life: LifeAnalysisDto;
+  studyWork: StudyWorkDto;
+  growth: GrowthWidgetDto;
 }
 
 export type OccupationType =

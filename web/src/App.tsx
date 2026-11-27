@@ -23,6 +23,7 @@ const Routine = lazy(() => import('@/pages/Routine'));
 const Wellness = lazy(() => import('@/pages/Wellness'));
 const Assistant = lazy(() => import('@/pages/Assistant'));
 const Analytics = lazy(() => import('@/pages/Analytics'));
+const Insights = lazy(() => import('@/pages/Insights'));
 const Reports = lazy(() => import('@/pages/Reports'));
 const Profile = lazy(() => import('@/pages/Profile'));
 const SettingsPage = lazy(() => import('@/pages/Settings'));
@@ -128,6 +129,7 @@ export default function App() {
                 <Route path="/wellness" element={<Wellness />} />
                 <Route path="/assistant" element={<Assistant />} />
                 <Route path="/analytics" element={<Analytics />} />
+                <Route path="/insights" element={<Insights />} />
                 <Route path="/reports" element={<Reports />} />
                 <Route path="/profile" element={<Profile />} />
                 <Route path="/settings" element={<SettingsPage />} />
