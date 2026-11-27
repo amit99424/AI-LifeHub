@@ -514,7 +514,8 @@ export type WidgetId =
   | 'studywork'
   | 'goals'
   | 'overdue'
-  | 'growth';
+  | 'growth'
+  | 'quote';
 
 export interface PeriodSummaryDto {
   days: number;
@@ -863,4 +864,19 @@ export interface MonthlyReviewDto {
   model: string | null;
   generatedAt: string;
   note: string | null;
+}
+
+// ─────────────────────────────────────────────────────────────
+// Phase 7 — daily quote
+// ─────────────────────────────────────────────────────────────
+
+export interface QuoteDto {
+  id: string;
+  text: string;
+  /** Author plus source when verified; the category when there is no attribution. */
+  attribution: string;
+  author: string | null;
+  source: string | null;
+  category: string;
+  date: string;
 }

@@ -34,6 +34,7 @@ import { api } from '@/lib/api';
 import type { DashboardResponse, Insight, WidgetId } from '@/lib/types';
 import { Badge, Button, Card, CardHeader, EmptyState, ProgressBar, toast } from '@/components/ui';
 import { WIDGET_META, useDashboardLayout } from '@/lib/dashboardLayout';
+import { QuoteCard } from '@/components/dashboard/QuoteCard';
 import { useNouns } from '@/lib/occupation';
 import { MOOD_META, PRIORITY_STYLES, cn, formatDate, formatMinutes } from '@/lib/utils';
 
@@ -74,6 +75,7 @@ const WIDGET_SPAN: Partial<Record<WidgetId, string>> = {
   goals: 'lg:col-span-1',
   overdue: 'lg:col-span-1',
   growth: 'lg:col-span-2',
+  quote: 'lg:col-span-1',
 };
 
 /** A delta chip: direction, magnitude, and whether it is inside the noise band. */
@@ -690,6 +692,10 @@ export function DashboardWidget({
       );
     }
 
+    case 'quote':
+      // The card fetches its own quote: it is the only widget whose content is
+      // not part of the dashboard payload, so a refresh never refetches the page.
+      return <QuoteCard />;
     case 'growth': {
       const g = data.growth;
       // No skills recorded is not "0 skills improved": it is nothing to read.

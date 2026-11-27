@@ -50,6 +50,8 @@ export const WIDGET_IDS = [
   'overdue',
   // Phase 5: skills and recorded growth.
   'growth',
+  // Phase 7: the daily quote card.
+  'quote',
 ] as const;
 
 export type WidgetId = (typeof WIDGET_IDS)[number];
