@@ -73,6 +73,7 @@ const WIDGET_SPAN: Partial<Record<WidgetId, string>> = {
   studywork: 'lg:col-span-2',
   goals: 'lg:col-span-1',
   overdue: 'lg:col-span-1',
+  growth: 'lg:col-span-2',
 };
 
 /** A delta chip: direction, magnitude, and whether it is inside the noise band. */
@@ -685,6 +686,68 @@ export function DashboardWidget({
               </Link>
             </div>
           )}
+        </Card>
+      );
+    }
+
+    case 'growth': {
+      const g = data.growth;
+      // No skills recorded is not "0 skills improved": it is nothing to read.
+      if (!g || !g.hasAnyRecord) {
+        return (
+          <Card className="p-4">
+            <CardHeader title="Growth" subtitle="Skills and what your records show" icon={<TrendingUp className="h-4 w-4" />} />
+            <p className="mt-2 text-[12px] text-ink-500">
+              No skills recorded yet, so there is nothing to measure. Adding one is what makes growth readable.
+            </p>
+            <Link to="/growth?tab=skills" className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-brand-600 hover:underline dark:text-brand-400">
+              Add a skill <ArrowRight className="h-3 w-3" />
+            </Link>
+          </Card>
+        );
+      }
+      const maxWeekly = Math.max(1, ...g.weekly.map((w) => w.minutes));
+      return (
+        <Card className="p-4">
+          <CardHeader title="Growth" subtitle="From recorded skills and level changes" icon={<TrendingUp className="h-4 w-4" />} />
+          <div className="mt-2 grid grid-cols-3 gap-2">
+            <Stat label="Skills" value={String(g.totals.skills)} />
+            <Stat label="Practice" value={`${Math.round(g.totals.practiceMinutes / 60)}h`} />
+            <Stat label="Level ups" value={String(g.totals.levelsGained)} />
+          </div>
+
+          {g.improving.length > 0 ? (
+            <ul className="mt-2.5 space-y-1">
+              {g.improving.map((i) => (
+                <li key={i.name} className="flex items-center justify-between gap-2 text-[12px]">
+                  <span className="truncate text-ink-700 dark:text-ink-200">{i.name}</span>
+                  <span className="shrink-0 rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">
+                    +{i.gained} level{i.gained === 1 ? '' : 's'}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-2.5 text-[12px] text-ink-500">No level change recorded in this window.</p>
+          )}
+
+          {g.needingAttention.length > 0 && (
+            <p className="mt-2 text-[11px] text-amber-600 dark:text-amber-400">
+              No recent activity: {g.needingAttention.map((n) => n.name).join(', ')}
+            </p>
+          )}
+
+          {g.weekly.some((w) => w.minutes > 0) && (
+            <div className="mt-2.5 flex h-10 items-end gap-1">
+              {g.weekly.map((w) => (
+                <div key={w.weekStart} className="flex-1 rounded-t bg-brand-500/60" style={{ height: `${Math.max(4, (w.minutes / maxWeekly) * 100)}%` }} title={`${w.minutes} min`} />
+              ))}
+            </div>
+          )}
+
+          <Link to="/growth" className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-brand-600 hover:underline dark:text-brand-400">
+            Open Growth Hub <ArrowRight className="h-3 w-3" />
+          </Link>
         </Card>
       );
     }

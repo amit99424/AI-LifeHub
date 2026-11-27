@@ -6,10 +6,35 @@ import { requireAuth, userTz } from '../middleware/auth.js';
 import { mergeWidgetOrder, occupationDisplayName, parseLayout, resolveOccupation, WIDGET_IDS } from '../services/occupations.js';
 import { buildAnalytics } from '../services/analytics.js';
 import { analyseLife, summarisePeriod, type LifeDay } from '../services/lifeEngine.js';
+import { analyseGrowth, type GrowthAnalysis } from '../services/growth.js';
+import { collectGrowth } from './skills.js';
 import { addDaysKey, endOfMonthKey, startOfMonthKey, todayKey } from '../lib/dates.js';
 
 export const analyticsRouter = Router();
 analyticsRouter.use(requireAuth);
+
+/**
+ * The dashboard's growth widget gets the same read as the Growth Hub, trimmed
+ * to what a card can show. It carries the reasons, not just the counts, so the
+ * card cannot imply more than the records support.
+ */
+function growthWidget(g: GrowthAnalysis) {
+  return {
+    hasAnyRecord: g.hasAnyRecord,
+    totals: g.totals,
+    improving: g.improving.slice(0, 3).map((s) => ({
+      name: s.name,
+      from: s.levelAtWindowStart,
+      to: s.currentLevel,
+      gained: s.levelsGainedInWindow,
+    })),
+    needingAttention: g.needingAttention.slice(0, 3).map((n) => ({ name: n.skill.name, reason: n.reason })),
+    consistency: g.consistency,
+    weekly: g.weekly,
+    summary: g.summary,
+    window: g.window,
+  };
+}
 
 const rangeSchema = z.object({
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -131,7 +156,7 @@ analyticsRouter.get(
     studyTo.setUTCDate(studyTo.getUTCDate() + 1);
     const from = studyFrom;
     const to = studyTo;
-    const [projectRows, goalRows, overdueRows] = await Promise.all([
+    const [projectRows, goalRows, overdueRows, growthInput] = await Promise.all([
       prisma.project.findMany({
         where: { userId: req.user!.id, archivedAt: null },
         select: { id: true, title: true, kind: true, status: true, deadline: true, _count: { select: { tasks: true } } },
@@ -147,6 +172,9 @@ analyticsRouter.get(
       prisma.task.count({
         where: { userId: req.user!.id, status: { in: ['TODO', 'IN_PROGRESS'] }, dueDate: { lt: new Date() } },
       }),
+      // The growth widget reads the same analysis the Growth Hub page shows,
+      // so the two can never disagree about how many skills improved.
+      collectGrowth(req.user!.id, tz, 30),
     ]);
     const projectMinutes = new Map(
       (
@@ -157,6 +185,9 @@ analyticsRouter.get(
         })
       ).map((g) => [g.projectId, Math.round((g._sum.durationSec ?? 0) / 60)]),
     );
+    // Attached to the payload as its own block: it is not study/work data and
+    // folding it in there would make the widget list lie about what it holds.
+    const growth = growthWidget(analyseGrowth(growthInput));
     const studyWork = {
       overdueTasks: overdueRows,
       projects: projectRows.map((p) => ({
@@ -189,6 +220,7 @@ analyticsRouter.get(
     res.json({
       comparisons,
       studyWork,
+      growth,
       widgets: widgetOrder,
       widgetLayout: { order: layout.order, hidden: layout.hidden, available: WIDGET_IDS },
       life: {

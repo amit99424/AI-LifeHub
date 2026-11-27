@@ -14,6 +14,7 @@ const Tasks = lazy(() => import('@/pages/Tasks'));
 const Projects = lazy(() => import('@/pages/Projects'));
 const ProjectDetail = lazy(() => import('@/pages/ProjectDetail'));
 const Goals = lazy(() => import('@/pages/Goals'));
+const GrowthHub = lazy(() => import('@/pages/GrowthHub'));
 const Habits = lazy(() => import('@/pages/Habits'));
 const Mood = lazy(() => import('@/pages/Mood'));
 const Journal = lazy(() => import('@/pages/Journal'));
@@ -117,6 +118,7 @@ export default function App() {
                 <Route path="/projects" element={<Projects />} />
                 <Route path="/projects/:id" element={<ProjectDetail />} />
                 <Route path="/goals" element={<Goals />} />
+                <Route path="/growth" element={<GrowthHub />} />
                 <Route path="/habits" element={<Habits />} />
                 <Route path="/mood" element={<Mood />} />
                 <Route path="/journal" element={<Journal />} />

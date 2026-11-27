@@ -617,7 +617,7 @@ export function computeFeatures(data: ActivityData, opts: { from: Date; to: Date
   for (const j of data.journalEntries) activityDays.add(dateKey(j.date));
   for (const s of data.workSessions) activityDays.add(localDateKey(s.startedAt, tz));
   // Recorded skill practice is activity: a day spent on a skill is not an empty day.
-  for (const u of data.skillUpdates) activityDays.add(localDateKey(u.createdAt, tz));
+  for (const u of data.skillUpdates ?? []) activityDays.add(localDateKey(u.createdAt, tz));
 
   const missing: string[] = [];
   if (completed.length < 5) missing.push('task completion history (need ≥5 completed tasks)');
@@ -628,7 +628,7 @@ export function computeFeatures(data: ActivityData, opts: { from: Date; to: Date
   if (data.dailyActivities.length < 3) missing.push('routine data such as sleep or screen time');
   // A skill practice row with no skill behind it is a real gap, and one the
   // assistant can act on, so it is named.
-  if (data.skillUpdates.length > 0 && data.skillCount === 0) missing.push('skills recorded (there is practice activity but no skill to attach it to)');
+  if ((data.skillUpdates ?? []).length > 0 && !data.skillCount) missing.push('skills recorded (there is practice activity but no skill to attach it to)');
 
   const availability: DataAvailability = {
     daysWithAnyActivity: activityDays.size,

@@ -138,6 +138,7 @@ register('growth: goals without a target are never described as behind', () => {
 
 // ── the deterministic fallback cannot invent anything ─────────
 const emptyGrowth: GrowthFeatureSummary = {
+  tracked: { skills: 0, updatesInWindow: 0 },
   totals: { skills: 0, active: 0, paused: 0, completed: 0, levelsGained: 0, practiceMinutes: 0, practiceDays: 0, evidence: 0, activePlans: 0 },
   perSkill: [],
   improving: [],

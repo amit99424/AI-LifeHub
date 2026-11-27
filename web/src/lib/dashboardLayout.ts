@@ -64,4 +64,5 @@ export const WIDGET_META: Record<WidgetId, { title: string; description: string 
   studywork: { title: 'Study & work', description: 'Your containers, their progress and time logged' },
   goals: { title: 'Goals', description: 'Active goals against their targets and deadlines' },
   overdue: { title: 'Overdue work', description: 'How old your overdue tasks are, and where they sit' },
+  growth: { title: 'Growth', description: 'Skills tracked, practice recorded and what improved' },
 };

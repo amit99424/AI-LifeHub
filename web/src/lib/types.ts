@@ -447,6 +447,7 @@ export interface DashboardResponse {
   widgetLayout?: { order: WidgetId[] | null; hidden: WidgetId[]; available: WidgetId[] };
   comparisons?: { day: ComparisonDto; week: ComparisonDto; month: ComparisonDto };
   studyWork?: StudyWorkDto;
+  growth?: GrowthWidgetDto;
   occupation: ResolvedOccupation;
   greetingName: string;
   onboarded: boolean;
@@ -512,7 +513,8 @@ export type WidgetId =
   | 'timeofday'
   | 'studywork'
   | 'goals'
-  | 'overdue';
+  | 'overdue'
+  | 'growth';
 
 export interface PeriodSummaryDto {
   days: number;
@@ -568,4 +570,152 @@ export interface ComparisonDto {
   current: Record<string, number | null>;
   previous: Record<string, number | null>;
   changes: { key: string; current: number | null; previous: number | null; change: number | null; direction: 'up' | 'down' | 'flat' | 'unknown' }[];
+}
+
+// ─────────────────────────────────────────────────────────────
+// Phase 5 — skills, growth and development plans
+// ─────────────────────────────────────────────────────────────
+// These mirror the server's payloads exactly. `null` always means "not
+// recorded": a skill with no target has no distance to target, and a window
+// with no practice has no consistency figure, rather than a zero that reads
+// like a measurement.
+
+export type SkillLevel = 'BEGINNER' | 'INTERMEDIATE' | 'ADVANCED' | 'EXPERT';
+export type SkillStatus = 'ACTIVE' | 'PAUSED' | 'COMPLETED';
+export type SkillCategory = 'TECHNICAL' | 'COMMUNICATION' | 'LEADERSHIP' | 'BUSINESS' | 'ACADEMIC' | 'CREATIVE' | 'PERSONAL' | 'OTHER';
+export type EvidenceKind = 'PRACTICE' | 'PROJECT' | 'COURSE' | 'CERTIFICATE' | 'FEEDBACK' | 'PORTFOLIO' | 'NOTE';
+export type PlanStatus = 'DRAFT' | 'ACTIVE' | 'COMPLETED' | 'ARCHIVED';
+export type PlanItemKind = 'OBJECTIVE' | 'ACTIVITY' | 'MILESTONE' | 'SKILL';
+
+export interface SkillUpdateDto {
+  id: string;
+  at: string;
+  fromLevel: SkillLevel | null;
+  toLevel: SkillLevel;
+  note: string | null;
+  minutes: number | null;
+}
+
+export interface SkillEvidenceDto {
+  id: string;
+  kind: EvidenceKind;
+  title: string;
+  detail: string | null;
+  url: string | null;
+  date: string | null;
+  createdAt: string;
+}
+
+export interface SkillDto {
+  id: string;
+  name: string;
+  category: SkillCategory;
+  description: string | null;
+  currentLevel: SkillLevel;
+  targetLevel: SkillLevel | null;
+  status: SkillStatus;
+  motivation: string | null;
+  startedAt: string;
+  achievedAt: string | null;
+  archivedAt: string | null;
+  updates: SkillUpdateDto[];
+  evidence: SkillEvidenceDto[];
+  goals: { id: string; title: string; status: string }[];
+  isDemo?: boolean;
+  createdAt: string;
+}
+
+export interface SkillProgressDto {
+  skillId: string;
+  name: string;
+  category: string;
+  status: SkillStatus;
+  currentLevel: SkillLevel;
+  targetLevel: SkillLevel | null;
+  levelsGainedInWindow: number;
+  levelAtWindowStart: SkillLevel | null;
+  improvedInWindow: boolean;
+  levelsToTarget: number | null;
+  practiceMinutes: number;
+  practiceDays: number;
+  daysSinceActivity: number | null;
+  evidenceCount: number;
+  /** The plain-language basis for whatever the UI says about this skill. */
+  evidence: string;
+}
+
+export interface GrowthAnalysisDto {
+  window: { from: string; to: string; days: number };
+  hasAnyRecord: boolean;
+  totals: {
+    skills: number;
+    active: number;
+    paused: number;
+    completed: number;
+    levelsGained: number;
+    practiceMinutes: number;
+    practiceDays: number;
+    evidence: number;
+    activePlans: number;
+  };
+  perSkill: SkillProgressDto[];
+  improving: SkillProgressDto[];
+  needingAttention: { skill: SkillProgressDto; reason: string }[];
+  goals: {
+    total: number;
+    withTarget: number;
+    achievedInWindow: number;
+    milestonesDone: number;
+    milestonesTotal: number;
+    behind: { id: string; title: string; current: number | null; target: number | null; metric: string | null; deadline: string; fraction: number }[];
+  };
+  consistency: { activeDays: number; bestStreak: number; currentStreak: number; thin: boolean; note: string };
+  weekly: { weekStart: string; minutes: number; days: number; levelsGained: number }[];
+  recentEvidence: { id: string; skillId: string; skillName: string; kind: string; title: string; at: string }[];
+  /** Deterministic next steps, each naming the record it came from. */
+  nextSteps: { kind: 'skill' | 'goal' | 'consistency' | 'practice'; text: string; skillId?: string; goalId?: string }[];
+  summary: { headline: string; detail: string };
+  sufficiency: { enough: boolean; message: string };
+}
+
+/** The dashboard widget's slice of the growth read. */
+export interface GrowthWidgetDto {
+  hasAnyRecord: boolean;
+  totals: GrowthAnalysisDto['totals'];
+  improving: { name: string; from: SkillLevel | null; to: SkillLevel; gained: number }[];
+  needingAttention: { name: string; reason: string }[];
+  consistency: GrowthAnalysisDto['consistency'];
+  weekly: { weekStart: string; minutes: number; days: number; levelsGained: number }[];
+  summary: { headline: string; detail: string };
+  window: { from: string; to: string; days: number };
+}
+
+export interface PlanItemDto {
+  id: string;
+  kind: PlanItemKind;
+  title: string;
+  detail: string | null;
+  week: number;
+  order: number;
+  successCriteria: string | null;
+  skillId: string | null;
+  goalId: string | null;
+  milestoneId: string | null;
+  taskId: string | null;
+  appliedAt: string | null;
+}
+
+export interface DevelopmentPlanDto {
+  id: string;
+  title: string;
+  summary: string | null;
+  source: string;
+  status: PlanStatus;
+  horizonWeeks: number;
+  weeklyMinutes: number | null;
+  goal: { id: string; title: string } | null;
+  createdAt: string;
+  items: PlanItemDto[];
+  appliedCount: number;
+  itemCount: number;
 }

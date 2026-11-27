@@ -22,6 +22,7 @@ import {
   X,
   Layers,
   Target,
+  Sprout,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth, useTheme } from '@/lib/auth';
@@ -41,6 +42,9 @@ const NAV: NavItem[] = [
   // the word changes with the occupation, the page does not.
   { to: '/projects', label: 'Projects', icon: Layers, labelFor: { STUDENT: 'Subjects', TEACHER: 'Courses', FREELANCER: 'Client Projects', BUSINESS_OWNER: 'Initiatives', ENTREPRENEUR: 'Ventures', JOB_SEEKER: 'Applications' } },
   { to: '/goals', label: 'Goals', icon: Target },
+  // Skills, plans and the growth read. One page for every occupation; the
+  // vocabulary inside it comes from the occupation profile.
+  { to: '/growth', label: 'Growth Hub', icon: Sprout },
   { to: '/habits', label: 'Habits', icon: Activity },
   { to: '/mood', label: 'Mood Tracker', icon: Smile },
   { to: '/journal', label: 'Journal', icon: BookOpen },
