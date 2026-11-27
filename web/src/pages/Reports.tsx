@@ -194,7 +194,9 @@ function ReportBody({ report }: { report: ReportDto }) {
           <div className="flex items-center gap-2">
             <CalendarRange className="h-4 w-4 text-brand-600 dark:text-brand-300" />
             <p className="text-[13px] font-bold text-ink-900 dark:text-white">{report.range.label}</p>
-            <Badge tone="neutral">
+            {/* Whitespace-nowrap: on a narrow screen the range above wraps and
+                this pill would otherwise break across two lines. */}
+            <Badge tone="neutral" className="shrink-0 whitespace-nowrap">
               {report.totals.daysWithData} of {report.totals.days} days recorded
             </Badge>
           </div>

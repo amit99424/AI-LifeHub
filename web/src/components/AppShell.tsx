@@ -138,7 +138,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         ))}
       </nav>
 
-      <div className="mx-3 mb-3 rounded-2xl border border-[rgb(var(--border))] bg-brand-50 p-3.5 dark:bg-brand-500/10">
+      {/* Hidden below a tall window: with 16 nav items this card would otherwise
+          push Profile and Settings under the account row. */}
+      <div className="mx-3 mb-3 rounded-2xl border border-[rgb(var(--border))] bg-brand-50 p-3.5 dark:bg-brand-500/10 [@media(max-height:800px)]:hidden">
         <div className="flex items-center gap-2">
           <Sparkles className="h-4 w-4 text-brand-600 dark:text-brand-300" />
           <p className="text-xs font-bold text-ink-900 dark:text-white">Low-effort tracking</p>

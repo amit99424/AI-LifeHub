@@ -165,7 +165,9 @@ function Overview({ onOpenSkills }: { onOpenSkills: () => void }) {
         </div>
       </Card>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      {/* Two columns from the smallest width: four full-width tiles pushed the
+          rest of the page below the fold on a phone. */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="Skills tracked" value={String(g.totals.skills)} hint={`${g.totals.active} active`} />
         <Stat label="Practice recorded" value={fmtMinutes(g.totals.practiceMinutes)} hint={`${g.totals.practiceDays} day${g.totals.practiceDays === 1 ? '' : 's'}`} />
         <Stat

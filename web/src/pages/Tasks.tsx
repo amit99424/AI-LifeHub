@@ -297,7 +297,7 @@ export default function Tasks() {
         >
           <div className="relative flex-1">
             <Plus className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
-            <Input className="pl-9" placeholder="Add a task and press Enter — timestamps are captured automatically" value={quick} onChange={(e) => setQuick(e.target.value)} />
+            <Input className="pl-9" placeholder="Add a task — press Enter" value={quick} onChange={(e) => setQuick(e.target.value)} />
           </div>
           <Button type="submit" loading={quickAdd.isPending} disabled={!quick.trim()}>
             Add
@@ -609,7 +609,7 @@ function Group({
                 {t.isDemo && <Badge tone="warning">Sample</Badge>}
                 {t.overdue && <Badge tone="danger">Overdue</Badge>}
               </div>
-              {t.description && <p className="mt-0.5 line-clamp-1 text-xs text-ink-500">{t.description}</p>}
+              {t.description && <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-ink-500 sm:line-clamp-1">{t.description}</p>}
               <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-ink-400">
                 <span className="inline-flex items-center gap-1">
                   <CalendarCheck className="h-3 w-3" /> {t.category}
